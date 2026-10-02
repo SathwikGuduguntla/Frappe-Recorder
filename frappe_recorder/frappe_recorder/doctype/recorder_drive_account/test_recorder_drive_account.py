@@ -150,3 +150,30 @@ class TestRecorderDriveAccount(FrappeTestCase):
 
 		with self.assertRaises(frappe.ValidationError):
 			drive.save_folder("https://example.com/whatever")
+
+	def test_site_account_is_used_for_visitor_recordings(self):
+		frappe.set_user("Administrator")
+		frappe.db.delete("Recorder Drive Account", {"user": "Guest"})
+		frappe.get_doc(
+			{
+				"doctype": "Recorder Drive Account",
+				"user": "Guest",
+				"refresh_token": "site-refresh-token",
+				"folder_id": FOLDER_ID,
+				"folder_name": "Site recordings",
+				"auto_upload": 1,
+			}
+		).insert(ignore_permissions=True)
+		self.assertEqual(drive.get_status(site=1)["folder_name"], "Site recordings")
+		self.assertTrue(drive.should_auto_upload("Guest"))
+
+		frappe.set_user("Guest")
+		status = drive.get_status()
+		self.assertTrue(status["visitor"])
+		self.assertTrue(status["connected"])
+		self.assertNotIn("google_email", status)
+
+		# only System Managers manage the site's Drive
+		frappe.set_user(TEST_USER)
+		with self.assertRaises(frappe.PermissionError):
+			drive.get_status(site=1)

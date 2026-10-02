@@ -1,0 +1,64 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-02 13:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "allow_guest_recording",
+  "guest_max_recording_mb",
+  "guest_recordings_per_hour"
+ ],
+ "fields": [
+  {
+   "default": "1",
+   "description": "Visitors can record and share videos without an account. Their recordings are managed from the browser they were made in.",
+   "fieldname": "allow_guest_recording",
+   "fieldtype": "Check",
+   "label": "Allow recording without logging in"
+  },
+  {
+   "default": "500",
+   "depends_on": "allow_guest_recording",
+   "description": "0 means no limit.",
+   "fieldname": "guest_max_recording_mb",
+   "fieldtype": "Int",
+   "label": "Maximum size of a visitor's recording (MB)",
+   "non_negative": 1
+  },
+  {
+   "default": "20",
+   "depends_on": "allow_guest_recording",
+   "description": "0 means no limit.",
+   "fieldname": "guest_recordings_per_hour",
+   "fieldtype": "Int",
+   "label": "Recordings per hour from one IP address",
+   "non_negative": 1
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 0,
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-10-02 13:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Recorder",
+ "name": "Recorder Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

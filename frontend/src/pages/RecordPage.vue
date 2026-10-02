@@ -256,12 +256,17 @@
 							<span class="lucide-hard-drive inline-block size-3 align-[-1px]" />
 							Saving to Google Drive · {{ drive.folder_name }}
 						</template>
-						<template v-else-if="drive?.configured">
+						<template v-else-if="drive?.configured && !drive?.visitor">
 							<router-link :to="{ name: 'Settings' }" class="underline"
 								>Connect Google Drive</router-link
 							>
 							to keep a copy of every recording in your Drive.
 						</template>
+					</p>
+					<p v-if="session.isGuest" class="mt-2 text-center text-xs text-ink-gray-5">
+						No account needed. You can manage your recordings from this browser;
+						<button class="underline" @click="redirectToLogin()">log in</button>
+						to keep them with your account.
 					</p>
 				</div>
 
@@ -392,6 +397,7 @@ import FloatingControls from '@/components/FloatingControls.vue'
 import VideoStream from '@/components/VideoStream.vue'
 import { MODES, isRecordingSupported, useRecorder } from '@/composables/useRecorder'
 import { copyToClipboard, formatDuration } from '@/utils/format'
+import { redirectToLogin, session } from '@/session'
 
 const route = useRoute()
 const router = useRouter()
@@ -454,6 +460,7 @@ async function copyLink() {
 watch(recorder.phase, async (phase) => {
 	if (phase !== 'done' || !recorder.recording.value) return
 	const { share_id, share_url } = recorder.recording.value
+	if (recorder.notice.value) toast.warning(recorder.notice.value, { duration: 10_000 })
 	copyToClipboard(share_url)
 		.then(() => toast.success('Recording ready. Link copied to clipboard'))
 		.catch(() => {})

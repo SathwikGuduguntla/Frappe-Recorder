@@ -154,7 +154,11 @@
 
 				<!-- Drive status for the owner -->
 				<div
-					v-if="rec.is_owner && driveStatus"
+					v-if="
+						rec.is_owner &&
+						driveStatus &&
+						(!driveStatus.visitor || driveStatus.connected)
+					"
 					class="mt-6 flex flex-wrap items-center gap-3 rounded-6 border border-outline-gray-2 bg-surface-base p-4"
 				>
 					<span class="lucide-hard-drive size-5 text-ink-gray-6" />
@@ -444,27 +448,29 @@ function download() {
 	link.click()
 }
 
-const ownerMenu = computed(() => [
-	{
-		label: 'Anyone with the link can view',
-		switch: true,
-		switchValue: Boolean(rec.value.is_public),
-		onClick: (value) => update({ is_public: value ? 1 : 0 }),
-	},
-	{
-		label: 'Allow comments',
-		switch: true,
-		switchValue: Boolean(rec.value.allow_comments),
-		onClick: (value) => update({ allow_comments: value ? 1 : 0 }),
-	},
-	{
-		label: 'Allow viewers to download',
-		switch: true,
-		switchValue: Boolean(rec.value.allow_download),
-		onClick: (value) => update({ allow_download: value ? 1 : 0 }),
-	},
-	{ label: 'Delete recording', icon: 'lucide-trash-2', theme: 'red', onClick: remove },
-])
+const ownerMenu = computed(() =>
+	[
+		rec.value.can_make_private && {
+			label: 'Anyone with the link can view',
+			switch: true,
+			switchValue: Boolean(rec.value.is_public),
+			onClick: (value) => update({ is_public: value ? 1 : 0 }),
+		},
+		{
+			label: 'Allow comments',
+			switch: true,
+			switchValue: Boolean(rec.value.allow_comments),
+			onClick: (value) => update({ allow_comments: value ? 1 : 0 }),
+		},
+		{
+			label: 'Allow viewers to download',
+			switch: true,
+			switchValue: Boolean(rec.value.allow_download),
+			onClick: (value) => update({ allow_download: value ? 1 : 0 }),
+		},
+		{ label: 'Delete recording', icon: 'lucide-trash-2', theme: 'red', onClick: remove },
+	].filter(Boolean)
+)
 
 function remove() {
 	dialog.prompt({

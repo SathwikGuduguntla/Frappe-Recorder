@@ -9,6 +9,7 @@ export const session = reactive({
 	userImage: null,
 	isSystemManager: false,
 	driveEnabled: false,
+	allowGuestRecording: true,
 })
 
 let loading = null
@@ -24,6 +25,7 @@ export function loadSession() {
 				userImage: boot.user_image || null,
 				isSystemManager: Boolean(boot.is_system_manager),
 				driveEnabled: Boolean(boot.drive_enabled),
+				allowGuestRecording: Boolean(boot.allow_guest_recording),
 			})
 			return session
 		})

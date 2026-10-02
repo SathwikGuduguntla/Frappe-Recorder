@@ -2,6 +2,7 @@ import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { call } from 'frappe-ui'
 
 import { composeCameraBubble } from './compositor'
+import { getDeviceKey } from '../utils/deviceKey'
 
 const CHUNK_INTERVAL_MS = 3000
 const UPLOAD_RETRIES = 5
@@ -62,6 +63,8 @@ export function useRecorder() {
 	const countdownValue = ref(0)
 	const elapsedMs = ref(0)
 	const micMuted = ref(false)
+	// why a recording ended on its own, e.g. a visitor reaching the size limit
+	const notice = ref('')
 
 	const cameras = ref([])
 	const microphones = ref([])
@@ -90,6 +93,7 @@ export function useRecorder() {
 	let nextChunkIndex = 0
 	let pumping = null
 	let lastUploadError = null
+	let truncated = false
 	let accumulatedMs = 0
 	let segmentStartedAt = 0
 	let timer = null
@@ -417,6 +421,8 @@ export function useRecorder() {
 	// ---- uploading ----------------------------------------------------------
 
 	function resetUpload() {
+		truncated = false
+		notice.value = ''
 		chunks = []
 		queue = []
 		nextChunkIndex = 0
@@ -426,6 +432,7 @@ export function useRecorder() {
 	}
 
 	function enqueueChunk(blob) {
+		if (truncated) return
 		chunks.push(blob)
 		queue.push({ index: nextChunkIndex++, blob })
 		upload.totalBytes += blob.size
@@ -435,8 +442,16 @@ export function useRecorder() {
 	function kickQueue() {
 		if (pumping) return
 		pumping = pumpQueue()
-			.catch((e) => (lastUploadError = e))
+			.catch((e) => (e.fatal ? stopEarly(e.message) : (lastUploadError = e)))
 			.finally(() => (pumping = null))
+	}
+
+	/** The server refused more video: keep what is uploaded and finish with that. */
+	function stopEarly(message) {
+		notice.value = message
+		truncated = true
+		queue = []
+		if (isActive.value) stop()
 	}
 
 	async function pumpQueue() {
@@ -467,17 +482,26 @@ export function useRecorder() {
 					method: 'POST',
 					headers: {
 						'X-Frappe-CSRF-Token': window.csrf_token,
+						'X-Recorder-Key': getDeviceKey(),
 						Accept: 'application/json',
 					},
 					body: form,
 				})
 				if (!response.ok) {
 					const body = await response.json().catch(() => ({}))
-					throw new Error(serverError(body) || `Upload failed (${response.status})`)
+					const error = new Error(
+						serverError(body) || `Upload failed (${response.status})`
+					)
+					// a refusal (limit reached, no permission) won't change by retrying
+					error.fatal =
+						response.status >= 400 &&
+						response.status < 500 &&
+						![408, 429].includes(response.status)
+					throw error
 				}
 				return
 			} catch (e) {
-				if (attempt >= UPLOAD_RETRIES || cancelled) throw e
+				if (e.fatal || attempt >= UPLOAD_RETRIES || cancelled) throw e
 				await sleep(1000 * 2 ** attempt)
 			}
 		}
@@ -553,6 +577,7 @@ export function useRecorder() {
 		countdownValue,
 		elapsedMs,
 		micMuted,
+		notice,
 		cameras,
 		microphones,
 		cameraStream,
