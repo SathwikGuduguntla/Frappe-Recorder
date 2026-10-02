@@ -2,16 +2,23 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Frappe UI App</title>
+    <link rel="icon" type="image/svg+xml" href="/assets/frappe_recorder/logo.svg" />
+    <title>{{ og_title or 'Frappe Recorder' }}</title>
+    <meta name="description" content="{{ og_description or '' }}" />
+    <meta property="og:type" content="video.other" />
+    <meta property="og:title" content="{{ og_title or 'Frappe Recorder' }}" />
+    <meta property="og:description" content="{{ og_description or '' }}" />
+    <meta property="og:image" content="{{ og_image or '' }}" />
+    <meta name="twitter:card" content="summary_large_image" />
   </head>
   <body>
     <div id="app"></div>
     <div id="modals"></div>
     <div id="popovers"></div>
-
-    <script> window.csrf_token = '{{ csrf_token }}'; </script>
+    <script>
+      window.csrf_token = '{{ csrf_token }}'
+    </script>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

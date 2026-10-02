@@ -22,7 +22,21 @@ app_license = "agpl-3.0"
 # ]
 
 website_route_rules = [
-    {"from_route": "/recorder/<path:app_path>", "to_route": "recorder"}
+	{"from_route": "/recorder/<path:app_path>", "to_route": "recorder"},
+]
+
+# Short share links: /r/<share_id> -> the watch page of the recorder SPA
+website_redirects = [
+	{"source": r"/r/([A-Za-z0-9]+)", "target": r"/recorder/v/\1"},
+]
+
+add_to_apps_screen = [
+	{
+		"name": "frappe_recorder",
+		"logo": "/assets/frappe_recorder/logo.svg",
+		"title": "Recorder",
+		"route": "/recorder",
+	}
 ]
 # Includes in <head>
 # ------------------
@@ -249,4 +263,3 @@ website_route_rules = [
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-

@@ -1,0 +1,126 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "autoname": "field:user",
+ "creation": "2026-07-14 18:11:11.223634",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "user",
+  "google_email",
+  "refresh_token",
+  "connected_on",
+  "section_folder",
+  "folder_link",
+  "folder_id",
+  "folder_name",
+  "section_preferences",
+  "auto_upload",
+  "keep_local_copy",
+  "share_on_drive"
+ ],
+ "fields": [
+  {
+   "fieldname": "user",
+   "fieldtype": "Link",
+   "in_list_view": 1,
+   "label": "User",
+   "options": "User",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "google_email",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Google Account",
+   "options": "Email",
+   "read_only": 1
+  },
+  {
+   "fieldname": "refresh_token",
+   "fieldtype": "Password",
+   "label": "Refresh Token",
+   "length": 2000,
+   "read_only": 1
+  },
+  {
+   "fieldname": "connected_on",
+   "fieldtype": "Datetime",
+   "label": "Connected On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_folder",
+   "fieldtype": "Section Break",
+   "label": "Storage Folder"
+  },
+  {
+   "fieldname": "folder_link",
+   "fieldtype": "Data",
+   "label": "Drive Folder Link"
+  },
+  {
+   "fieldname": "folder_id",
+   "fieldtype": "Data",
+   "label": "Drive Folder ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "folder_name",
+   "fieldtype": "Data",
+   "label": "Drive Folder Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "section_preferences",
+   "fieldtype": "Section Break",
+   "label": "Preferences"
+  },
+  {
+   "default": "1",
+   "fieldname": "auto_upload",
+   "fieldtype": "Check",
+   "label": "Upload new recordings automatically"
+  },
+  {
+   "default": "1",
+   "fieldname": "keep_local_copy",
+   "fieldtype": "Check",
+   "label": "Keep a copy on this site"
+  },
+  {
+   "default": "1",
+   "fieldname": "share_on_drive",
+   "fieldtype": "Check",
+   "label": "Make Drive file viewable by anyone with the link"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 0,
+ "links": [],
+ "modified": "2026-10-02 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Recorder",
+ "name": "Recorder Drive Account",
+ "naming_rule": "By fieldname",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "creation",
+ "sort_order": "DESC",
+ "states": []
+}
