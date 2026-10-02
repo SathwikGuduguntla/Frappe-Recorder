@@ -15,6 +15,8 @@ export default defineConfig({
     }),
     vue(),
   ],
+  // The AI models run in module workers (see src/ai), which import packages.
+  worker: { format: 'es' },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
