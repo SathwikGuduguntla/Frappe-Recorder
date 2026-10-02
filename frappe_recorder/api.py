@@ -95,6 +95,9 @@ def _serialize(doc, is_owner: bool) -> dict:
 		"stream_url": f"/api/method/frappe_recorder.api.stream?token={doc.token}",
 		"mime_type": doc.mime_type,
 		"is_owner": is_owner,
+		"transcript_status": doc.transcript_status or "Not Started",
+		"insights_status": doc.insights_status or "Not Started",
+		"sop_status": doc.sop_status or "Not Started",
 	}
 	if is_owner:
 		data.update(

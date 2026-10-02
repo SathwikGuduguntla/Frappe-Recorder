@@ -6,6 +6,7 @@ Record your screen, your camera, or both in the browser and get a share link the
 - **Share** at `/r/<token>`: anyone with the link can watch, no sign-in. The owner can rename, switch link sharing off, download and delete. Views are counted.
 - **Library** at `/recorder/library`: all of your recordings with thumbnails and search.
 - **Google Drive** at `/recorder/settings`: paste the link of a Drive folder shared as *Anyone with the link → Editor*; every recording is then copied into that folder, and videos already in the folder can be imported into the library.
+- **Transcript and AI notes** on every video: a timestamped transcript, a summary, highlights and a step-by-step SOP, with clickable times that jump the video. Made by free open-source models in the recording owner's browser: no API key, no server load, works on any hosting plan.
 
 The video is uploaded in small pieces while you record, so the link is ready as soon as you press stop, however long the recording is.
 
@@ -23,6 +24,16 @@ No Google Cloud project, OAuth client or "Connect" step is needed.
 4. Save. The recorder checks the uploader and the folder straight away and turns Drive storage on.
 
 Uploads run in the background queue (`long`), so a worker must be running. Failed uploads are retried hourly. Videos are uploaded as the Google account that deployed the script, and use its storage quota.
+
+#### Transcripts and AI notes
+
+On by default, under **Transcripts and AI notes** in `/recorder/settings`. Nothing to install on the server.
+
+- When the owner opens a finished recording, their browser transcribes it with **Whisper** ([transformers.js](https://github.com/huggingface/transformers.js)) and saves the transcript.
+- The summary, highlights and SOP are written in the same browser by a small open-source model (**Qwen2.5** or **Llama 3.2** through [WebLLM](https://github.com/mlc-ai/web-llm)). This needs WebGPU: Chrome or Edge on a computer with a graphics card. If the model is already downloaded, the summary starts by itself; otherwise the owner clicks **Write summary**.
+- Models are downloaded once from Hugging Face and kept in the browser's cache. Whisper base is about 145 MB; Qwen2.5 1.5B is about 1 GB.
+- Viewers just read the results, on any device.
+- **Optional Ollama server:** set an Ollama URL and model to also make summaries and SOPs for owners whose device has no WebGPU, and to let viewers ask questions about a video. Ollama needs a machine with about 8 GB RAM for a 7B model, so it can't run on shared hosting; it can run on another machine.
 
 #### Notes
 

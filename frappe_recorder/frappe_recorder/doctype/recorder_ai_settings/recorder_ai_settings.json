@@ -1,0 +1,80 @@
+{
+ "actions": [],
+ "allow_rename": 0,
+ "creation": "2026-10-03 10:00:00.000000",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "enabled",
+  "whisper_model",
+  "llm_model",
+  "section_server",
+  "ollama_url",
+  "ollama_model"
+ ],
+ "fields": [
+  {
+   "fieldname": "enabled",
+   "fieldtype": "Check",
+   "label": "Enable Transcripts And AI",
+   "default": "1",
+   "description": "Transcripts, summaries, highlights and SOPs are made in the recording owner's browser with open-source models. Nothing runs on this server unless an Ollama server is set below."
+  },
+  {
+   "fieldname": "whisper_model",
+   "fieldtype": "Select",
+   "label": "Speech Model",
+   "default": "onnx-community/whisper-base",
+   "options": "onnx-community/whisper-tiny\nonnx-community/whisper-base\nonnx-community/whisper-small",
+   "description": "Downloaded once by each browser: tiny ~75 MB, base ~145 MB, small ~480 MB."
+  },
+  {
+   "fieldname": "llm_model",
+   "fieldtype": "Select",
+   "label": "Writing Model",
+   "default": "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
+   "options": "Qwen2.5-0.5B-Instruct-q4f16_1-MLC\nQwen2.5-1.5B-Instruct-q4f16_1-MLC\nQwen2.5-3B-Instruct-q4f16_1-MLC\nLlama-3.2-3B-Instruct-q4f16_1-MLC",
+   "description": "Writes summaries, highlights and SOPs in the browser (needs WebGPU). Downloaded once: 0.5B ~0.4 GB, 1.5B ~1 GB, 3B ~2 GB."
+  },
+  {
+   "fieldname": "section_server",
+   "fieldtype": "Section Break",
+   "label": "Optional Ollama Server"
+  },
+  {
+   "fieldname": "ollama_url",
+   "fieldtype": "Data",
+   "label": "Ollama URL",
+   "description": "e.g. http://localhost:11434. When set, summaries and SOPs can be made on that server for devices without WebGPU, and viewers can ask questions."
+  },
+  {
+   "fieldname": "ollama_model",
+   "fieldtype": "Data",
+   "label": "Ollama Model",
+   "default": "qwen2.5:7b"
+  }
+ ],
+ "issingle": 1,
+ "links": [],
+ "modified": "2026-10-03 10:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Frappe Recorder",
+ "name": "Recorder AI Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}

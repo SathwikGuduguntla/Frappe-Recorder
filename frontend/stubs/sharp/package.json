@@ -1,0 +1,6 @@
+{
+  "name": "sharp",
+  "version": "0.0.0-browser-stub",
+  "description": "Empty stand-in: transformers.js only needs this in Node.js, and the recorder runs it in the browser.",
+  "main": "index.js"
+}

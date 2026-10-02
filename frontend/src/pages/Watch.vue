@@ -27,7 +27,14 @@
         </p>
         <p v-if="recording.status !== 'Failed'" class="mt-1 text-base text-ink-gray-4">Check back in a moment.</p>
       </div>
-      <VideoPlayer v-else :src="recording.stream_url" :poster="recording.thumbnail" @play="countView" />
+      <VideoPlayer
+        v-else
+        ref="player"
+        :src="recording.stream_url"
+        :poster="recording.thumbnail"
+        @play="countView"
+        @timeupdate="(t) => (currentTime = t)"
+      />
 
       <div class="mt-5 flex flex-col gap-6 lg:flex-row lg:items-start">
         <div class="min-w-0 flex-1">
@@ -53,6 +60,8 @@
               <span>{{ formatSize(recording.file_size) }}</span>
             </template>
           </p>
+
+          <AiPanel :recording="recording" :current-time="currentTime" @seek="(t) => player?.seek(t)" />
         </div>
 
         <!-- Owner tools -->
@@ -111,6 +120,7 @@ import { onBeforeUnmount, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Button, LoadingIndicator, Switch, dialog, toast } from 'frappe-ui'
 import { api, copyText, errorMessage, formatDate, formatDuration, formatSize } from '@/api'
+import AiPanel from '@/components/AiPanel.vue'
 import DriveBadge from '@/components/DriveBadge.vue'
 import VideoPlayer from '@/components/VideoPlayer.vue'
 
@@ -124,6 +134,8 @@ const loadError = ref('')
 const recording = ref(null)
 const title = ref('')
 const copied = ref(false)
+const player = ref(null)
+const currentTime = ref(0)
 
 let viewCounted = false
 let pollTimer = null

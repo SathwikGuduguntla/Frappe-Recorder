@@ -28,7 +28,21 @@
   "drive_file_id",
   "column_break_drive",
   "drive_link",
-  "drive_error"
+  "drive_error",
+  "section_ai",
+  "transcript_status",
+  "transcript_language",
+  "transcript",
+  "column_break_ai",
+  "insights_status",
+  "summary",
+  "highlights",
+  "suggested_questions",
+  "section_sop",
+  "sop_status",
+  "sop",
+  "ai_model",
+  "ai_error"
  ],
  "fields": [
   {
@@ -178,12 +192,114 @@
    "fieldtype": "Small Text",
    "label": "Drive Error",
    "read_only": 1
+  },
+  {
+   "fieldname": "section_ai",
+   "fieldtype": "Section Break",
+   "label": "Transcript & AI"
+  },
+  {
+   "fieldname": "transcript_status",
+   "fieldtype": "Select",
+   "label": "Transcript Status",
+   "options": "Not Started\nProcessing\nReady\nFailed",
+   "default": "Not Started",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "transcript_language",
+   "fieldtype": "Data",
+   "label": "Transcript Language",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "transcript",
+   "fieldtype": "Long Text",
+   "label": "Transcript",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "JSON list of {start, end, text} segments, times in seconds."
+  },
+  {
+   "fieldname": "column_break_ai",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "insights_status",
+   "fieldtype": "Select",
+   "label": "Summary Status",
+   "options": "Not Started\nProcessing\nReady\nFailed",
+   "default": "Not Started",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "summary",
+   "fieldtype": "Long Text",
+   "label": "Summary",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "Markdown."
+  },
+  {
+   "fieldname": "highlights",
+   "fieldtype": "Long Text",
+   "label": "Highlights",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "JSON list of {time, title}."
+  },
+  {
+   "fieldname": "suggested_questions",
+   "fieldtype": "Long Text",
+   "label": "Suggested Questions",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "JSON list of strings."
+  },
+  {
+   "fieldname": "section_sop",
+   "fieldtype": "Section Break",
+   "label": "SOP"
+  },
+  {
+   "fieldname": "sop_status",
+   "fieldtype": "Select",
+   "label": "SOP Status",
+   "options": "Not Started\nProcessing\nReady\nFailed",
+   "default": "Not Started",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "sop",
+   "fieldtype": "Long Text",
+   "label": "SOP",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "Markdown."
+  },
+  {
+   "fieldname": "ai_model",
+   "fieldtype": "Data",
+   "label": "Generated With",
+   "read_only": 1,
+   "no_copy": 1
+  },
+  {
+   "fieldname": "ai_error",
+   "fieldtype": "Small Text",
+   "label": "AI Error",
+   "read_only": 1,
+   "no_copy": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-02 19:30:00.000000",
+ "modified": "2026-10-03 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Recorder",
  "name": "Screen Recording",

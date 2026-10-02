@@ -111,6 +111,8 @@
         <Button type="submit" variant="solid" label="Save" :loading="saving" :disabled="!dirty" />
       </div>
     </form>
+
+    <AiSettingsCard v-if="!loading" />
   </div>
 </template>
 
@@ -118,6 +120,7 @@
 import { computed, reactive, ref } from 'vue'
 import { Button, LoadingIndicator, Switch, toast } from 'frappe-ui'
 import { api, copyText, errorMessage, loadSession } from '@/api'
+import AiSettingsCard from '@/components/AiSettingsCard.vue'
 
 const loading = ref(true)
 const saving = ref(false)
