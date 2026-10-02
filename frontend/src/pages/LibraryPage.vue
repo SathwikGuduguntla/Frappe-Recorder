@@ -4,7 +4,16 @@
 
 		<main class="mx-auto max-w-6xl px-4 py-6">
 			<div class="flex flex-wrap items-center gap-3">
-				<h1 class="text-xl font-semibold text-ink-gray-9">My recordings</h1>
+				<div>
+					<h1 class="text-xl font-semibold text-ink-gray-9">
+						{{ session.isGuest ? 'Recordings on this device' : 'My recordings' }}
+					</h1>
+					<p v-if="session.isGuest" class="mt-0.5 text-sm text-ink-gray-5">
+						Recorded in this browser without an account.
+						<button class="underline" @click="redirectToLogin()">Log in</button>
+						to keep them with your account.
+					</p>
+				</div>
 				<div class="ml-auto w-full sm:w-64">
 					<TextInput v-model="search" placeholder="Search recordings" :debounce="300">
 						<template #prefix
@@ -15,7 +24,7 @@
 			</div>
 
 			<!-- Folders -->
-			<div class="mt-4 flex flex-wrap items-center gap-2">
+			<div v-if="!session.isGuest" class="mt-4 flex flex-wrap items-center gap-2">
 				<button class="chip" :class="{ 'chip-active': !folder }" @click="folder = null">
 					All
 				</button>
@@ -167,6 +176,7 @@ import { useRouter } from 'vue-router'
 import { Button, Dropdown, LoadingIndicator, TextInput, call, dialog, toast } from 'frappe-ui'
 
 import AppHeader from '@/components/AppHeader.vue'
+import { redirectToLogin, session } from '@/session'
 import DriveBadge from '@/components/DriveBadge.vue'
 import { copyToClipboard, errorMessage, formatDuration, timeAgo } from '@/utils/format'
 
@@ -220,7 +230,11 @@ function recordingMenu(item) {
 		},
 		{ label: 'Copy link', icon: 'lucide-link', onClick: () => copyLink(item) },
 		{ label: 'Rename', icon: 'lucide-pencil', onClick: () => rename(item) },
-		{ label: 'Move to folder', icon: 'lucide-folder-input', onClick: () => move(item) },
+		!session.isGuest && {
+			label: 'Move to folder',
+			icon: 'lucide-folder-input',
+			onClick: () => move(item),
+		},
 		item.video_file && {
 			label: 'Download',
 			icon: 'lucide-download',

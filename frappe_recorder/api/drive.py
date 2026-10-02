@@ -5,11 +5,14 @@
 
 A System Manager stores an OAuth client in *Google Drive Settings*. Each user then
 connects their own Google account from the recorder's settings page and pastes the
-link of the Drive folder their recordings should go to. Finished recordings are
+link of the Drive folder their recordings should go to. Recordings made without
+logging in go to the site's Drive folder, which a System Manager connects the same
+way (the Recorder Drive Account named "Guest"). Finished recordings are
 uploaded to that folder in a background job, and the share page can play them back
 from Drive.
 """
 
+import json
 import os
 import re
 import secrets
@@ -33,6 +36,9 @@ SCOPES = ("openid", "email", "https://www.googleapis.com/auth/drive")
 FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
 UPLOAD_CHUNK_SIZE = 32 * 256 * 1024  # 8 MiB; Drive wants multiples of 256 KiB
 REQUEST_TIMEOUT = 60
+# Recordings made without logging in are owned by the Guest user, so the site-wide
+# Drive account is simply the Guest user's account.
+SITE_ACCOUNT = "Guest"
 
 
 def get_redirect_uri():
@@ -53,13 +59,28 @@ def get_account(user=None):
 	return None
 
 
-@frappe.whitelist()
-def get_status():
+@frappe.whitelist(allow_guest=True)
+def get_status(site=0):
 	settings = get_settings()
-	account = get_account() if settings else None
+	if frappe.session.user == "Guest" and not cint(site):
+		# a visitor only needs to know whether their recordings go to Drive
+		account = get_account(SITE_ACCOUNT) if settings else None
+		connected = is_connected(account)
+		return {
+			"configured": bool(settings),
+			"visitor": True,
+			"connected": connected,
+			"folder_id": account.folder_id if connected else None,
+			"folder_name": account.folder_name if connected else None,
+			"auto_upload": cint(account.auto_upload) if connected else 0,
+		}
+
+	user = resolve_account_user(site)
+	account = get_account(user) if settings else None
 	status = {
 		"configured": bool(settings),
-		"connected": bool(account and account.get_password("refresh_token", raise_exception=False)),
+		"site": cint(site),
+		"connected": is_connected(account),
 		"redirect_uri": get_redirect_uri(),
 		"can_configure": "System Manager" in frappe.get_roles(),
 	}
@@ -79,8 +100,8 @@ def get_status():
 
 
 @frappe.whitelist()
-def get_authorize_url():
-	ensure_user()
+def get_authorize_url(site=0):
+	account_user = resolve_account_user(site)
 	settings = get_settings()
 	if not settings:
 		frappe.throw(
@@ -90,7 +111,11 @@ def get_authorize_url():
 		)
 
 	state = secrets.token_urlsafe(24)
-	frappe.cache.set_value(f"frappe_recorder:oauth_state:{state}", frappe.session.user, expires_in_sec=600)
+	frappe.cache.set_value(
+		f"frappe_recorder:oauth_state:{state}",
+		json.dumps({"session_user": frappe.session.user, "account": account_user}),
+		expires_in_sec=600,
+	)
 	params = {
 		"client_id": settings.client_id,
 		"redirect_uri": get_redirect_uri(),
@@ -106,11 +131,15 @@ def get_authorize_url():
 
 @frappe.whitelist(methods=["GET"])
 def oauth_callback(state=None, code=None, error=None, **kwargs):
-	user = frappe.cache.get_value(f"frappe_recorder:oauth_state:{state}", expires=True) if state else None
+	saved = frappe.cache.get_value(f"frappe_recorder:oauth_state:{state}", expires=True) if state else None
 	if state:
 		frappe.cache.delete_value(f"frappe_recorder:oauth_state:{state}")
+	saved = json.loads(saved) if saved else {}
+	user = saved.get("account")
 
-	if error or not code or not user or user != frappe.session.user:
+	if error or not code or not user or saved.get("session_user") != frappe.session.user:
+		return redirect_to_settings("error")
+	if user == SITE_ACCOUNT and "System Manager" not in frappe.get_roles():
 		return redirect_to_settings("error")
 
 	settings = get_settings()
@@ -157,14 +186,30 @@ def redirect_to_settings(result):
 	frappe.local.response["location"] = f"/recorder/settings?drive={result}"
 
 
+def resolve_account_user(site=0):
+	"""Whose Drive account a settings call is about: the caller's, or the site's."""
+	if cint(site):
+		if "System Manager" not in frappe.get_roles():
+			frappe.throw(
+				_("Only a System Manager can set up the site's Drive folder."), frappe.PermissionError
+			)
+		return SITE_ACCOUNT
+	ensure_user()
+	return frappe.session.user
+
+
+def is_connected(account):
+	return bool(account and account.get_password("refresh_token", raise_exception=False))
+
+
 @frappe.whitelist(methods=["POST"])
-def save_folder(folder_link):
-	account = get_connected_account()
+def save_folder(folder_link, site=0):
+	account = get_connected_account(resolve_account_user(site))
 	folder_link = (folder_link or "").strip()
 	if not folder_link:
 		account.folder_link = account.folder_id = account.folder_name = None
 		account.save(ignore_permissions=True)
-		return get_status()
+		return get_status(site)
 
 	folder_id = parse_folder_id(folder_link)
 	if not folder_id:
@@ -189,12 +234,12 @@ def save_folder(folder_link):
 	account.folder_id = folder["id"]
 	account.folder_name = folder.get("name")
 	account.save(ignore_permissions=True)
-	return get_status()
+	return get_status(site)
 
 
 @frappe.whitelist(methods=["POST"])
-def update_preferences(auto_upload=None, keep_local_copy=None, share_on_drive=None):
-	account = get_connected_account()
+def update_preferences(auto_upload=None, keep_local_copy=None, share_on_drive=None, site=0):
+	account = get_connected_account(resolve_account_user(site))
 	for field, value in (
 		("auto_upload", auto_upload),
 		("keep_local_copy", keep_local_copy),
@@ -203,14 +248,14 @@ def update_preferences(auto_upload=None, keep_local_copy=None, share_on_drive=No
 		if value is not None:
 			account.set(field, cint(value))
 	account.save(ignore_permissions=True)
-	return get_status()
+	return get_status(site)
 
 
 @frappe.whitelist(methods=["POST"])
-def disconnect():
-	account = get_account()
+def disconnect(site=0):
+	account = get_account(resolve_account_user(site))
 	if not account:
-		return get_status()
+		return get_status(site)
 	token = account.get_password("refresh_token", raise_exception=False)
 	if token:
 		try:
@@ -219,10 +264,10 @@ def disconnect():
 			pass
 	frappe.cache.delete_value(f"frappe_recorder:access_token:{account.user}")
 	account.delete(ignore_permissions=True)
-	return get_status()
+	return get_status(site)
 
 
-@frappe.whitelist(methods=["POST"])
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 def sync_recording(recording):
 	"""Upload (or re-upload after a failure) one recording to the owner's Drive folder."""
 	from frappe_recorder.api.recording import get_owned_doc
@@ -261,7 +306,9 @@ def upload_recording(recording):
 		doc.db_set({"google_drive_status": "Failed", "drive_error": "Google Drive is not connected."})
 		return
 
-	path = frappe.get_site_path("public", doc.video_file.lstrip("/"))
+	from frappe_recorder.api.recording import get_video_path
+
+	path = get_video_path(doc)
 	doc.db_set({"google_drive_status": "Uploading", "drive_error": None})
 	frappe.db.commit()
 	try:
@@ -452,9 +499,8 @@ def ensure_user():
 		frappe.throw(_("Please log in to continue."), frappe.AuthenticationError)
 
 
-def get_connected_account(user=None):
-	ensure_user()
+def get_connected_account(user):
 	account = get_account(user) if get_settings() else None
-	if not account or not account.get_password("refresh_token", raise_exception=False):
+	if not is_connected(account):
 		frappe.throw(_("Connect your Google Drive first."))
 	return account

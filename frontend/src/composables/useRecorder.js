@@ -1,6 +1,9 @@
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { call } from 'frappe-ui'
 
+import { composeCameraBubble } from './compositor'
+import { getDeviceKey } from '../utils/deviceKey'
+
 const CHUNK_INTERVAL_MS = 3000
 const UPLOAD_RETRIES = 5
 const API = 'frappe_recorder.api.recording'
@@ -60,6 +63,8 @@ export function useRecorder() {
 	const countdownValue = ref(0)
 	const elapsedMs = ref(0)
 	const micMuted = ref(false)
+	// why a recording ended on its own, e.g. a visitor reaching the size limit
+	const notice = ref('')
 
 	const cameras = ref([])
 	const microphones = ref([])
@@ -80,6 +85,7 @@ export function useRecorder() {
 	)
 
 	let mediaRecorder = null
+	let compositor = null
 	let audioContext = null
 	let thumbnail = null
 	let chunks = []
@@ -87,6 +93,7 @@ export function useRecorder() {
 	let nextChunkIndex = 0
 	let pumping = null
 	let lastUploadError = null
+	let truncated = false
 	let accumulatedMs = 0
 	let segmentStartedAt = 0
 	let timer = null
@@ -193,9 +200,15 @@ export function useRecorder() {
 			return
 		}
 
-		const videoTrack = usesScreen.value
+		const sourceTrack = usesScreen.value
 			? screenStream.value.getVideoTracks()[0]
 			: cameraStream.value.getVideoTracks()[0]
+		let videoTrack = sourceTrack
+		if (settings.mode === 'Screen + Camera' && cameraStream.value) {
+			// the bubble is drawn into the video itself, so it is there whatever is shared
+			compositor = composeCameraBubble(sourceTrack, cameraStream.value.getVideoTracks()[0])
+			videoTrack = compositor.track
+		}
 		recordedStream.value = new MediaStream([videoTrack, ...buildAudioTracks()])
 
 		const mimeType = pickMimeType()
@@ -214,7 +227,7 @@ export function useRecorder() {
 		}
 
 		// the browser's own "Stop sharing" bar ends the recording too
-		if (usesScreen.value) videoTrack.addEventListener('ended', () => isActive.value && stop())
+		if (usesScreen.value) sourceTrack.addEventListener('ended', () => isActive.value && stop())
 
 		await openFloatingControls().catch(() => {})
 
@@ -387,6 +400,8 @@ export function useRecorder() {
 	}
 
 	function teardownCapture() {
+		compositor?.stop()
+		compositor = null
 		stopStream(screenStream.value)
 		screenStream.value = null
 		recordedStream.value = null
@@ -406,6 +421,8 @@ export function useRecorder() {
 	// ---- uploading ----------------------------------------------------------
 
 	function resetUpload() {
+		truncated = false
+		notice.value = ''
 		chunks = []
 		queue = []
 		nextChunkIndex = 0
@@ -415,6 +432,7 @@ export function useRecorder() {
 	}
 
 	function enqueueChunk(blob) {
+		if (truncated) return
 		chunks.push(blob)
 		queue.push({ index: nextChunkIndex++, blob })
 		upload.totalBytes += blob.size
@@ -424,8 +442,16 @@ export function useRecorder() {
 	function kickQueue() {
 		if (pumping) return
 		pumping = pumpQueue()
-			.catch((e) => (lastUploadError = e))
+			.catch((e) => (e.fatal ? stopEarly(e.message) : (lastUploadError = e)))
 			.finally(() => (pumping = null))
+	}
+
+	/** The server refused more video: keep what is uploaded and finish with that. */
+	function stopEarly(message) {
+		notice.value = message
+		truncated = true
+		queue = []
+		if (isActive.value) stop()
 	}
 
 	async function pumpQueue() {
@@ -456,17 +482,26 @@ export function useRecorder() {
 					method: 'POST',
 					headers: {
 						'X-Frappe-CSRF-Token': window.csrf_token,
+						'X-Recorder-Key': getDeviceKey(),
 						Accept: 'application/json',
 					},
 					body: form,
 				})
 				if (!response.ok) {
 					const body = await response.json().catch(() => ({}))
-					throw new Error(serverError(body) || `Upload failed (${response.status})`)
+					const error = new Error(
+						serverError(body) || `Upload failed (${response.status})`
+					)
+					// a refusal (limit reached, no permission) won't change by retrying
+					error.fatal =
+						response.status >= 400 &&
+						response.status < 500 &&
+						![408, 429].includes(response.status)
+					throw error
 				}
 				return
 			} catch (e) {
-				if (attempt >= UPLOAD_RETRIES || cancelled) throw e
+				if (e.fatal || attempt >= UPLOAD_RETRIES || cancelled) throw e
 				await sleep(1000 * 2 ** attempt)
 			}
 		}
@@ -498,14 +533,14 @@ export function useRecorder() {
 	// ---- floating controls (Document Picture-in-Picture) --------------------
 
 	/**
-	 * Opens an always-on-top mini window with the camera bubble and the
-	 * stop/pause controls, so they stay reachable (and the camera bubble ends up
-	 * in the screen recording) while the person works in other windows.
+	 * Opens an always-on-top mini window with the stop/pause controls, so they
+	 * stay reachable while the person works in other windows. (The camera is not
+	 * shown there: it is already drawn into the recording.)
 	 */
 	async function openFloatingControls() {
 		// camera-only recordings don't need it: the page itself is the preview
 		if (!window.documentPictureInPicture || pipWindow.value || !usesScreen.value) return
-		const size = usesCamera.value ? { width: 240, height: 320 } : { width: 320, height: 96 }
+		const size = { width: 320, height: 96 }
 
 		const win = await window.documentPictureInPicture.requestWindow(size)
 		for (const sheet of document.styleSheets) {
@@ -542,6 +577,7 @@ export function useRecorder() {
 		countdownValue,
 		elapsedMs,
 		micMuted,
+		notice,
 		cameras,
 		microphones,
 		cameraStream,

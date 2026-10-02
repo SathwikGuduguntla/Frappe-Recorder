@@ -123,6 +123,49 @@ class TestScreenRecording(FrappeTestCase):
 			api.update_recording(created["name"], title="Hijacked")
 		self.assertNotIn(created["name"], [r.name for r in api.get_recordings()])
 
+	def test_private_recording_media_is_not_publicly_served(self):
+		created = self.record()
+		api.finalize_recording(created["name"], thumbnail=THUMBNAIL)
+		doc = frappe.get_doc("Screen Recording", created["name"])
+		public_video = api.get_video_path(doc)
+
+		# each step is its own request in real use; committing keeps the test's final
+		# rollback from replaying both file moves
+		frappe.db.commit()
+		api.update_recording(created["name"], is_public=0)
+		frappe.db.commit()
+		doc.reload()
+		self.assertTrue(doc.video_file.startswith("/private/files/"))
+		self.assertTrue(doc.thumbnail.startswith("/private/files/"))
+		self.assertFalse(os.path.exists(public_video))
+		with open(api.get_video_path(doc), "rb") as f:
+			self.assertEqual(f.read(), b"first-second")
+		# the owner still gets a playable URL
+		self.assertEqual(api.get_recording(created["share_id"])["video_url"], doc.video_file)
+
+		api.update_recording(created["name"], is_public=1)
+		frappe.db.commit()
+		doc.reload()
+		self.assertTrue(doc.video_file.startswith("/files/"))
+		self.assertTrue(os.path.exists(api.get_video_path(doc)))
+
+	def test_recordings_from_before_share_links_get_one(self):
+		from frappe_recorder.patches.v0_1.backfill_share_ids import execute
+
+		old = api.create_recording(title="Old")["name"]
+		frappe.db.set_value(
+			"Screen Recording",
+			old,
+			{"share_id": None, "status": "Processing", "google_drive_status": "Pending"},
+		)
+		execute()
+		share_id, status, drive_status = frappe.db.get_value(
+			"Screen Recording", old, ["share_id", "status", "google_drive_status"]
+		)
+		self.assertTrue(share_id)
+		self.assertEqual(status, "Failed")
+		self.assertEqual(drive_status, "Not Synced")
+
 	def test_cancelled_recording_is_discarded_with_its_file(self):
 		created = self.record()
 		doc = frappe.get_doc("Screen Recording", created["name"])

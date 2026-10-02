@@ -10,6 +10,10 @@ Lifecycle of a recording:
    slices are appended in order to the video file.
 3. `finalize_recording` attaches the finished file, stores the thumbnail and queues the
    post-processing job (duration fix-up + Google Drive upload).
+
+No account is needed to record (unless switched off in Recorder Settings). A visitor's
+browser sends a random device key with every request (`X-Recorder-Key`); recordings
+made without logging in store a hash of it, and only that browser can manage them.
 """
 
 import base64
@@ -33,6 +37,7 @@ RECORDING_MODES = ("Screen + Camera", "Screen", "Camera")
 ALLOWED_MIME_PREFIXES = ("video/webm", "video/mp4")
 REACTIONS = ("👍", "❤️", "😂", "🎉", "😮", "🔥", "👏", "🤔")
 MAX_CHUNK_SIZE = 50 * 1024 * 1024
+DEVICE_KEY_HEADER = "X-Recorder-Key"
 
 
 @frappe.whitelist(allow_guest=True)
@@ -43,8 +48,10 @@ def get_boot():
 		"is_guest": user == "Guest",
 		"site_name": frappe.local.site,
 		"drive_enabled": bool(frappe.db.get_single_value("Google Drive Settings", "enabled")),
+		"allow_guest_recording": guest_recording_allowed(),
 	}
 	if user != "Guest":
+		claim_device_recordings()
 		info = frappe.db.get_value("User", user, ["full_name", "user_image"], as_dict=True) or {}
 		boot.update(
 			{
@@ -56,9 +63,12 @@ def get_boot():
 	return boot
 
 
-@frappe.whitelist(methods=["POST"])
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 def create_recording(title=None, recording_mode="Screen + Camera", mime_type="video/webm", folder=None):
-	ensure_logged_in()
+	is_guest = frappe.session.user == "Guest"
+	if is_guest:
+		check_guest_can_record()
+		folder = None
 	if recording_mode not in RECORDING_MODES:
 		frappe.throw(_("Invalid recording mode"))
 	if not (mime_type or "").startswith(ALLOWED_MIME_PREFIXES):
@@ -74,13 +84,14 @@ def create_recording(title=None, recording_mode="Screen + Camera", mime_type="vi
 			"mime_type": mime_type,
 			"folder": folder,
 			"status": "Recording",
+			"owner_key_hash": get_device_key_hash() if is_guest else None,
 		}
 	)
-	doc.insert()
+	doc.insert(ignore_permissions=is_guest)
 	return {"name": doc.name, "share_id": doc.share_id, "share_url": get_share_url(doc.share_id)}
 
 
-@frappe.whitelist(methods=["POST"])
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 def upload_chunk(recording, chunk_index):
 	"""Append one MediaRecorder slice to the recording's video file.
 
@@ -105,6 +116,15 @@ def upload_chunk(recording, chunk_index):
 	if chunk_index > expected:
 		frappe.throw(_("Video chunk {0} arrived before chunk {1}.").format(chunk_index, expected))
 
+	limit = get_guest_size_limit() if doc.owner == "Guest" else 0
+	if limit and cint(doc.file_size) + len(data) > limit:
+		frappe.throw(
+			_(
+				"Recordings made without an account are limited to {0} MB. Log in to record longer videos."
+			).format(limit // (1024 * 1024)),
+			title=_("Recording limit reached"),
+		)
+
 	path = get_partial_video_path(doc)
 	os.makedirs(os.path.dirname(path), exist_ok=True)
 	with open(path, "wb" if chunk_index == 0 else "ab") as f:
@@ -119,7 +139,7 @@ def upload_chunk(recording, chunk_index):
 	return {"uploaded_chunks": expected + 1}
 
 
-@frappe.whitelist(methods=["POST"])
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 def finalize_recording(recording, duration_seconds=0, thumbnail=None):
 	doc = get_owned_doc("Screen Recording", recording)
 	if doc.status != "Recording":
@@ -144,6 +164,8 @@ def finalize_recording(recording, duration_seconds=0, thumbnail=None):
 	if should_auto_upload(doc.owner):
 		doc.google_drive_status = "Queued"
 	doc.save()
+	# made private while it was still being recorded
+	sync_media_privacy(doc)
 
 	frappe.enqueue(
 		"frappe_recorder.api.recording.post_process_recording",
@@ -156,13 +178,19 @@ def finalize_recording(recording, duration_seconds=0, thumbnail=None):
 
 
 def attach_video_file(doc, path):
-	"""Register the already-written video as a File attached to the recording.
+	attach_file(doc, path, "video_file")
 
-	The video is on disk already, so the File must not re-read it: that would load the
-	whole recording into memory and reject anything over System Settings' upload limit
-	(10 MB by default), which every recording longer than a minute or so exceeds.
+
+def attach_file(doc, path, fieldname):
+	"""Register a file already written to public/files as a File attached to the recording.
+
+	The File must not re-read it: for a video that would load the whole recording into
+	memory and reject anything over System Settings' upload limit (10 MB by default),
+	which every recording longer than a minute or so exceeds. It also keeps each
+	recording's files its own: Frappe would otherwise point identical uploads at one
+	shared file, which breaks when one recording's files are moved to private storage.
 	"""
-	file_name = get_video_file_name(doc)
+	file_name = os.path.basename(path)
 	file_doc = frappe.get_doc(
 		{
 			"doctype": "File",
@@ -173,7 +201,7 @@ def attach_video_file(doc, path):
 			"content_hash": get_file_hash(path),
 			"attached_to_doctype": "Screen Recording",
 			"attached_to_name": doc.name,
-			"attached_to_field": "video_file",
+			"attached_to_field": fieldname,
 			"is_private": 0,
 			"folder": "Home/Attachments",
 		}
@@ -186,6 +214,7 @@ def attach_video_file(doc, path):
 		frappe.clear_last_message()
 		file_doc.set_new_name()
 		file_doc.db_insert()
+	return file_doc.file_url
 
 
 def get_file_hash(path):
@@ -197,7 +226,7 @@ def get_file_hash(path):
 	return digest.hexdigest()
 
 
-@frappe.whitelist(methods=["POST"])
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 def discard_recording(recording):
 	"""Throw away a recording that was cancelled before it was finished."""
 	doc = get_owned_doc("Screen Recording", recording)
@@ -225,7 +254,7 @@ def fix_video_metadata(doc):
 	import subprocess
 
 	ffmpeg = shutil.which("ffmpeg")
-	path = frappe.get_site_path("public", doc.video_file.lstrip("/")) if doc.video_file else None
+	path = get_video_path(doc)
 	if not ffmpeg or not path or not os.path.exists(path):
 		return
 
@@ -254,25 +283,21 @@ def save_thumbnail(doc, data_url):
 	if len(content) > 5 * 1024 * 1024:
 		return None
 	extension = "png" if "png" in header else "jpg"
-	file_doc = frappe.get_doc(
-		{
-			"doctype": "File",
-			"file_name": f"thumbnail-{doc.share_id}.{extension}",
-			"attached_to_doctype": "Screen Recording",
-			"attached_to_name": doc.name,
-			"attached_to_field": "thumbnail",
-			"is_private": 0,
-			"content": content,
-		}
-	)
-	file_doc.save(ignore_permissions=True)
-	return file_doc.file_url
+	path = frappe.get_site_path("public", "files", f"thumbnail-{doc.share_id}.{extension}")
+	with open(path, "wb") as f:
+		f.write(content)
+	return attach_file(doc, path, "thumbnail")
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def get_recordings(folder=None, search=None, start=0, page_length=60):
-	ensure_logged_in()
 	filters = {"owner": frappe.session.user, "status": ["!=", "Recording"]}
+	if frappe.session.user == "Guest":
+		# a visitor sees the recordings made in this browser
+		key_hash = get_device_key_hash()
+		if not key_hash:
+			return []
+		filters["owner_key_hash"] = key_hash
 	if folder:
 		filters["folder"] = folder
 	or_filters = None
@@ -346,9 +371,11 @@ def get_recording(share_id):
 		"is_public": doc.is_public,
 		"allow_comments": doc.allow_comments,
 		"allow_download": doc.allow_download or is_owner,
-		"owner_name": owner.get("full_name") or doc.owner,
+		"owner_name": _("Anonymous") if doc.owner == "Guest" else owner.get("full_name") or doc.owner,
 		"owner_image": owner.get("user_image"),
 		"is_owner": is_owner,
+		# visitors' recordings stay public: Frappe serves private files only to users
+		"can_make_private": is_owner and doc.owner != "Guest",
 		"comments": get_comments(doc.name),
 	}
 	if is_owner:
@@ -366,7 +393,7 @@ def get_recording(share_id):
 @frappe.whitelist(allow_guest=True, methods=["POST"])
 def register_view(share_id):
 	doc = get_viewable_recording(share_id)
-	if frappe.session.user == doc.owner:
+	if can_manage(doc):
 		return doc.view_count
 
 	viewer = frappe.session.user if frappe.session.user != "Guest" else frappe.local.request_ip
@@ -382,22 +409,63 @@ def register_view(share_id):
 	return cint(doc.view_count) + 1
 
 
-@frappe.whitelist(methods=["POST"])
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 def update_recording(recording, **fields):
 	doc = get_owned_doc("Screen Recording", recording)
 	editable = ("title", "description", "is_public", "allow_comments", "allow_download", "folder")
 	for field in editable:
 		if field in fields:
 			doc.set(field, fields[field])
+	if doc.owner == "Guest":
+		if not cint(doc.is_public):
+			frappe.throw(_("Log in to make recordings private."))
+		doc.folder = None
 	if doc.folder:
 		get_owned_doc("Recording Folder", doc.folder)
 	if not (doc.title or "").strip():
 		frappe.throw(_("Title cannot be empty"))
+	privacy_changed = doc.has_value_changed("is_public")
 	doc.save()
+	if privacy_changed:
+		sync_media_privacy(doc)
 	return get_recording(doc.share_id)
 
 
-@frappe.whitelist(methods=["POST"])
+def sync_media_privacy(doc):
+	"""Keep the video and thumbnail files as private as the recording.
+
+	Public recordings are served as public files (fast, seekable, cacheable). A private
+	recording's files are moved to private storage, where Frappe only serves them to
+	people who can read the recording, so the old `/files/...` URL stops working.
+	"""
+	is_private = 0 if cint(doc.is_public) else 1
+	for fieldname in ("video_file", "thumbnail"):
+		for name in frappe.get_all(
+			"File",
+			filters={
+				"attached_to_doctype": "Screen Recording",
+				"attached_to_name": doc.name,
+				"attached_to_field": fieldname,
+				"is_private": 1 - is_private,
+			},
+			pluck="name",
+		):
+			file_doc = frappe.get_doc("File", name)
+			file_doc.is_private = is_private
+			file_doc.save(ignore_permissions=True)
+			doc.db_set(fieldname, file_doc.file_url, update_modified=False)
+
+
+def get_video_path(doc):
+	"""Path on disk of the recording's video, whether it is stored public or private."""
+	if not doc.video_file:
+		return None
+	if doc.video_file.startswith("/private/files/"):
+		return frappe.get_site_path("private", "files", doc.video_file.rsplit("/", 1)[-1])
+	return frappe.get_site_path("public", "files", doc.video_file.rsplit("/", 1)[-1])
+
+
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 def delete_recording(recording, delete_from_drive=False):
 	doc = get_owned_doc("Screen Recording", recording)
 	if cint(delete_from_drive) and doc.drive_file_id:
@@ -468,7 +536,7 @@ def add_comment(share_id, content, comment_type="Comment", timestamp_seconds=Non
 	return data
 
 
-@frappe.whitelist(methods=["POST"])
+@frappe.whitelist(allow_guest=True, methods=["POST"])
 def delete_comment(comment):
 	comment = frappe.get_doc("Recording Comment", comment)
 	recording = frappe.get_doc("Screen Recording", comment.recording)
@@ -477,9 +545,10 @@ def delete_comment(comment):
 	comment.delete(ignore_permissions=True)
 
 
-@frappe.whitelist()
+@frappe.whitelist(allow_guest=True)
 def get_folders():
-	ensure_logged_in()
+	if frappe.session.user == "Guest":
+		return []
 	folders = frappe.get_all(
 		"Recording Folder",
 		filters={"owner": frappe.session.user},
@@ -545,16 +614,76 @@ def ensure_logged_in():
 		frappe.throw(_("Please log in to continue."), frappe.AuthenticationError)
 
 
+def get_settings():
+	return frappe.get_cached_doc("Recorder Settings")
+
+
+def guest_recording_allowed():
+	return bool(cint(get_settings().allow_guest_recording))
+
+
+def get_guest_size_limit():
+	return cint(get_settings().guest_max_recording_mb) * 1024 * 1024
+
+
+def check_guest_can_record():
+	if not guest_recording_allowed():
+		frappe.throw(_("Please log in to record."), frappe.AuthenticationError)
+	if not get_device_key_hash():
+		frappe.throw(_("Your browser did not send its recorder key. Please reload the page."))
+
+	limit = cint(get_settings().guest_recordings_per_hour)
+	if limit:
+		cache_key = f"frappe_recorder:guest_recordings:{frappe.local.request_ip}"
+		count = cint(frappe.cache.get_value(cache_key, expires=True))
+		if count >= limit:
+			frappe.throw(
+				_("Too many recordings from your network. Please try again later or log in."),
+				frappe.RateLimitExceededError,
+			)
+		frappe.cache.set_value(cache_key, count + 1, expires_in_sec=60 * 60)
+
+
+def get_device_key_hash():
+	"""Hash of the random key this browser sends with every request, if it sent one."""
+	request = getattr(frappe.local, "request", None)
+	key = request.headers.get(DEVICE_KEY_HEADER, "") if request else ""
+	if len(key) < 20:
+		return None
+	return hashlib.sha256(key.encode()).hexdigest()
+
+
+def claim_device_recordings():
+	"""After logging in, recordings this browser made as a visitor move to the account."""
+	key_hash = get_device_key_hash()
+	if not key_hash:
+		return
+	names = frappe.get_all(
+		"Screen Recording", filters={"owner": "Guest", "owner_key_hash": key_hash}, pluck="name"
+	)
+	for name in names:
+		frappe.db.set_value(
+			"Screen Recording",
+			name,
+			{"owner": frappe.session.user, "owner_key_hash": None},
+			update_modified=False,
+		)
+
+
 def can_manage(doc):
 	user = frappe.session.user
-	return user != "Guest" and (doc.owner == user or "System Manager" in frappe.get_roles(user))
+	if user != "Guest" and (doc.owner == user or "System Manager" in frappe.get_roles(user)):
+		return True
+	key_hash = doc.get("owner_key_hash")
+	return doc.owner == "Guest" and bool(key_hash) and key_hash == get_device_key_hash()
 
 
 def get_owned_doc(doctype, name):
-	ensure_logged_in()
 	doc = frappe.get_doc(doctype, name)
 	if not can_manage(doc):
 		frappe.throw(_("Not permitted"), frappe.PermissionError)
+	# checked above; visitors (the Guest user) have no DocType permissions of their own
+	doc.flags.ignore_permissions = True
 	return doc
 
 

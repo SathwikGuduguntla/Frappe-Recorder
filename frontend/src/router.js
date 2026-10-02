@@ -6,13 +6,13 @@ const routes = [
 		path: '/',
 		name: 'Library',
 		component: () => import('./pages/LibraryPage.vue'),
-		meta: { requiresAuth: true },
+		meta: { guestsWhenAllowed: true },
 	},
 	{
 		path: '/record',
 		name: 'Record',
 		component: () => import('./pages/RecordPage.vue'),
-		meta: { requiresAuth: true },
+		meta: { guestsWhenAllowed: true },
 	},
 	{
 		path: '/v/:shareId',
@@ -36,7 +36,10 @@ const router = createRouter({
 
 router.beforeEach(async (to) => {
 	const session = await loadSession()
-	if (to.meta.requiresAuth && session.isGuest) {
+	// recording needs no account, unless an administrator switched that off
+	const needsLogin =
+		to.meta.requiresAuth || (to.meta.guestsWhenAllowed && !session.allowGuestRecording)
+	if (needsLogin && session.isGuest) {
 		redirectToLogin(router.resolve(to).href)
 		return false
 	}
