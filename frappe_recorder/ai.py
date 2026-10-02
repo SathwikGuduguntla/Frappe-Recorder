@@ -52,6 +52,25 @@ SYSTEM_PROMPT = (
 	"written as m:ss and refer to the position in the video."
 )
 
+# Shape of the summary reply. The browser model is held to it while it writes (WebLLM's
+# JSON mode needs an explicit schema), so the reply always parses.
+INSIGHTS_SCHEMA = {
+	"type": "object",
+	"properties": {
+		"summary": {"type": "string"},
+		"highlights": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"properties": {"time": {"type": "string"}, "title": {"type": "string"}},
+				"required": ["time", "title"],
+			},
+		},
+		"questions": {"type": "array", "items": {"type": "string"}},
+	},
+	"required": ["summary", "highlights", "questions"],
+}
+
 PROMPTS = {
 	"insights": (
 		"Here is the transcript of a screen recording, one line per segment, each starting with "
@@ -130,6 +149,7 @@ def get_ai_config():
 		"server_ai": server_ai_available(),
 		"system_prompt": SYSTEM_PROMPT,
 		"prompts": PROMPTS,
+		"insights_schema": INSIGHTS_SCHEMA,
 	}
 
 

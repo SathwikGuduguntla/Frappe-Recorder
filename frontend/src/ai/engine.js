@@ -141,18 +141,31 @@ async function getLlm(model, onProgress = () => {}) {
   return llm
 }
 
-async function complete(config, prompt, { json = false, onProgress } = {}) {
+/** With `schema`, the model is held to that JSON shape while it writes. */
+async function complete(config, prompt, { schema = null, onProgress } = {}) {
   const engine = await getLlm(config.llm_model, onProgress)
   onProgress?.({ stage: 'write', value: 0 })
-  const reply = await engine.chat.completions.create({
+  const request = {
     messages: [
       { role: 'system', content: config.system_prompt },
       { role: 'user', content: prompt },
     ],
     temperature: 0.2,
     max_tokens: 1200,
-    ...(json ? { response_format: { type: 'json_object' } } : {}),
-  })
+  }
+  let reply
+  try {
+    // WebLLM's json_object mode needs an explicit schema string: without one its grammar
+    // compiler fails with "Cannot pass non-string to std::string".
+    reply = await engine.chat.completions.create(
+      schema ? { ...request, response_format: { type: 'json_object', schema: JSON.stringify(schema) } } : request,
+    )
+  } catch (e) {
+    // If constrained writing isn't available on this device, ask plainly; parseJson
+    // copes with JSON wrapped in prose or code fences.
+    if (!schema || !/grammar/i.test(`${e?.name} ${e?.message}`)) throw e
+    reply = await engine.chat.completions.create(request)
+  }
   return (reply.choices?.[0]?.message?.content || '').trim()
 }
 
@@ -162,13 +175,13 @@ export async function writeInsights(config, segments, onProgress = () => {}) {
   let reply
   if (parts.length <= 1) {
     reply = await complete(config, fill(config.prompts.insights, { transcript: lines(segments).join('\n') }), {
-      json: true,
+      schema: config.insights_schema,
       onProgress,
     })
   } else {
     const notes = await partNotes(config, parts, onProgress)
     reply = await complete(config, fill(config.prompts.insights_from_parts, { transcript: notes.join('\n\n') }), {
-      json: true,
+      schema: config.insights_schema,
       onProgress,
     })
   }
