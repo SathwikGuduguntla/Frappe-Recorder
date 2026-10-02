@@ -20,6 +20,7 @@
   "video_file",
   "mime_type",
   "chunks_received",
+  "bytes_received",
   "column_break_file",
   "thumbnail",
   "section_drive",
@@ -125,6 +126,15 @@
    "default": "0"
   },
   {
+   "fieldname": "bytes_received",
+   "fieldtype": "Long Int",
+   "label": "Bytes Received",
+   "read_only": 1,
+   "hidden": 1,
+   "default": "0",
+   "description": "Size of the video file after the last chunk that was saved. A retried chunk is written from here."
+  },
+  {
    "fieldname": "column_break_file",
    "fieldtype": "Column Break"
   },
@@ -173,7 +183,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-02 12:00:00.000000",
+ "modified": "2026-10-02 19:30:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Recorder",
  "name": "Screen Recording",

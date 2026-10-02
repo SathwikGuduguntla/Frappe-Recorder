@@ -51,11 +51,11 @@ def _is_manager() -> bool:
 	return "System Manager" in frappe.get_roles()
 
 
-def _get_doc(token: str):
+def _get_doc(token: str, for_update: bool = False):
 	name = frappe.db.get_value(DOCTYPE, {"token": token}) if token else None
 	if not name:
 		frappe.throw(_("This recording does not exist or was deleted."), frappe.DoesNotExistError)
-	return frappe.get_doc(DOCTYPE, name)
+	return frappe.get_doc(DOCTYPE, name, for_update=for_update)
 
 
 def _is_owner(doc) -> bool:
@@ -63,9 +63,9 @@ def _is_owner(doc) -> bool:
 	return user != "Guest" and (doc.owner == user or _is_manager())
 
 
-def _get_owned_doc(token: str):
+def _get_owned_doc(token: str, for_update: bool = False):
 	_require_login()
-	doc = _get_doc(token)
+	doc = _get_doc(token, for_update=for_update)
 	if not _is_owner(doc):
 		frappe.throw(_("You do not have access to this recording."), frappe.PermissionError)
 	return doc
@@ -166,7 +166,9 @@ def _default_title() -> str:
 def upload_chunk(token: str, index: int):
 	"""Append one piece of the video. Chunks must arrive in order; a repeated
 	chunk (client retry after a dropped response) is acknowledged and ignored."""
-	doc = _get_owned_doc(token)
+	# The row lock makes a retry wait for the request it is retrying, so it then
+	# sees that chunk as received instead of appending it a second time.
+	doc = _get_owned_doc(token, for_update=True)
 	if doc.status != "Recording":
 		frappe.throw(_("This recording is already finished."))
 
@@ -181,14 +183,23 @@ def upload_chunk(token: str, index: int):
 	if not chunk:
 		frappe.throw(_("No video data received."))
 
-	with open(doc.local_video_path(), "ab") as f:
+	path = doc.local_video_path()
+	offset = cint(doc.bytes_received)
+	if received and not offset:
+		# Recording started before bytes_received was tracked.
+		offset = os.path.getsize(path)
+
+	with open(path, "ab") as f:
+		# Drop bytes left behind by a request that died before it was committed.
+		f.truncate(offset)
 		while True:
 			data = chunk.stream.read(1024 * 1024)
 			if not data:
 				break
 			f.write(data)
+			offset += len(data)
 
-	doc.db_set("chunks_received", received + 1, update_modified=False)
+	doc.db_set({"chunks_received": received + 1, "bytes_received": offset}, update_modified=False)
 	return {"received": received + 1}
 
 

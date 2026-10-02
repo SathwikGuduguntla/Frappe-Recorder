@@ -211,8 +211,8 @@
 
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
-import { Button, LoadingIndicator, Switch, dialog } from 'frappe-ui'
+import { onBeforeRouteLeave, useRouter } from 'vue-router'
+import { Button, LoadingIndicator, Switch, dialog, toast } from 'frappe-ui'
 import { formatDuration, formatSize, session } from '@/api'
 import { MODES, isRecordingSupported, isScreenCaptureSupported, useRecorder } from '@/composables/useRecorder'
 
@@ -275,6 +275,28 @@ function confirmDiscard() {
     onConfirm: () => discard(),
   })
 }
+
+// Leaving through a link in the app unmounts the recorder, which deletes the
+// recording. The browser's own warning only covers closing or reloading the tab.
+onBeforeRouteLeave(() => {
+  if (phase.value === 'finishing') {
+    toast.error('Your recording is still being saved. Stay on this page until it is done.')
+    return false
+  }
+  if (!['recording', 'paused', 'failed'].includes(phase.value)) return true
+  return new Promise((resolve) => {
+    dialog.danger({
+      title: 'Leave and discard this recording?',
+      message: 'The video will be deleted and cannot be recovered.',
+      confirmLabel: 'Discard and leave',
+      onConfirm: async () => {
+        await discard()
+        resolve(true)
+      },
+      onCancel: () => resolve(false),
+    })
+  })
+})
 
 function downloadLocal() {
   const blob = localBlob()

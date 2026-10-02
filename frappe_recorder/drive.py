@@ -383,11 +383,15 @@ def open_file_stream(file_id: str, range_header: str | None = None):
 
 
 def enqueue_upload(name: str):
+	# One job per recording: a second upload of the same video would leave a
+	# duplicate file in Drive.
 	frappe.enqueue(
 		"frappe_recorder.drive.upload_recording",
 		queue="long",
 		timeout=3600,
 		enqueue_after_commit=True,
+		job_id=f"frappe_recorder:drive_upload:{name}",
+		deduplicate=True,
 		recording=name,
 	)
 
@@ -429,15 +433,20 @@ def upload_recording(recording: str):
 		"drive_link": file.get("webViewLink") or f"https://drive.google.com/file/d/{file['id']}/view",
 		"drive_error": None,
 	}
-	if not settings.keep_local_copy:
-		os.remove(doc.local_video_path())
-		values["video_file"] = None
 	frappe.db.set_value(DOCTYPE, name, values, update_modified=False)
 	frappe.db.commit()
 
+	# The local file goes only once the Drive copy is on record, so a failure
+	# here cannot leave the recording with nothing to play.
+	if not settings.keep_local_copy:
+		os.remove(doc.local_video_path())
+		frappe.db.set_value(DOCTYPE, name, "video_file", None, update_modified=False)
+		frappe.db.commit()
+
 
 def retry_pending_uploads():
-	"""Hourly: pick up uploads that failed or were never attempted (e.g. Drive was down)."""
+	"""Hourly: pick up uploads that failed or were never attempted (e.g. Drive was down).
+	Each one is queued as its own job; uploading here would hit this job's timeout."""
 	if not is_active():
 		return
 	names = frappe.get_all(
@@ -452,7 +461,7 @@ def retry_pending_uploads():
 		pluck="name",
 	)
 	for name in names:
-		upload_recording(name)
+		enqueue_upload(name)
 
 
 @frappe.whitelist(methods=["POST"])
