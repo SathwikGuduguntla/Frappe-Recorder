@@ -5,3 +5,6 @@
 tags
 node_modules
 __pycache__
+# Built by `yarn build` in frontend/
+frappe_recorder/public/frontend
+frappe_recorder/www/recorder.html

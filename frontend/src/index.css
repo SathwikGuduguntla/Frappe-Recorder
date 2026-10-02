@@ -1,2 +1,12 @@
-@import './assets/Inter/inter.css';
-@import 'frappe-ui/src/style.css';
+/* frappe-ui/style.css provides the Tailwind layers, design tokens and Inter. */
+@import 'frappe-ui/style.css';
+
+html,
+body,
+#app {
+  height: 100%;
+}
+
+body {
+  @apply bg-surface-gray-1 text-ink-gray-8;
+}

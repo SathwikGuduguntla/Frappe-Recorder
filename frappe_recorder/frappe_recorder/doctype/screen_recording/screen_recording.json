@@ -7,15 +7,27 @@
  "engine": "InnoDB",
  "field_order": [
   "title",
-  "folder",
-  "video_file",
-  "thumbnail",
-  "duration_seconds",
+  "token",
   "status",
-  "view_count",
-  "route",
   "is_public",
-  "google_drive_status"
+  "source",
+  "column_break_main",
+  "duration_seconds",
+  "file_size",
+  "view_count",
+  "folder",
+  "section_file",
+  "video_file",
+  "mime_type",
+  "chunks_received",
+  "column_break_file",
+  "thumbnail",
+  "section_drive",
+  "google_drive_status",
+  "drive_file_id",
+  "column_break_drive",
+  "drive_link",
+  "drive_error"
  ],
  "fields": [
   {
@@ -26,15 +38,95 @@
    "reqd": 1
   },
   {
+   "fieldname": "token",
+   "fieldtype": "Data",
+   "label": "Share Token",
+   "read_only": 1,
+   "unique": 1,
+   "no_copy": 1,
+   "description": "Random ID used in the share link: /r/<token>"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "Recording\nProcessing\nReady\nFailed",
+   "default": "Recording"
+  },
+  {
+   "fieldname": "is_public",
+   "fieldtype": "Check",
+   "label": "Anyone With The Link Can View",
+   "default": "1"
+  },
+  {
+   "fieldname": "source",
+   "fieldtype": "Select",
+   "label": "Source",
+   "options": "Recorder\nGoogle Drive",
+   "default": "Recorder",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_main",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "duration_seconds",
+   "fieldtype": "Int",
+   "label": "Duration (Seconds)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "file_size",
+   "fieldtype": "Int",
+   "label": "File Size (Bytes)",
+   "read_only": 1
+  },
+  {
+   "fieldname": "view_count",
+   "fieldtype": "Int",
+   "label": "View Count",
+   "read_only": 1,
+   "default": "0"
+  },
+  {
    "fieldname": "folder",
    "fieldtype": "Link",
    "label": "Folder",
    "options": "Recording Folder"
   },
   {
+   "fieldname": "section_file",
+   "fieldtype": "Section Break",
+   "label": "File"
+  },
+  {
    "fieldname": "video_file",
-   "fieldtype": "Attach",
-   "label": "Video File"
+   "fieldtype": "Data",
+   "label": "Video File",
+   "read_only": 1,
+   "description": "File name inside the site's private/files/recorder directory. Empty when the video only lives in Google Drive."
+  },
+  {
+   "fieldname": "mime_type",
+   "fieldtype": "Data",
+   "label": "MIME Type",
+   "read_only": 1
+  },
+  {
+   "fieldname": "chunks_received",
+   "fieldtype": "Int",
+   "label": "Chunks Received",
+   "read_only": 1,
+   "hidden": 1,
+   "default": "0"
+  },
+  {
+   "fieldname": "column_break_file",
+   "fieldtype": "Column Break"
   },
   {
    "fieldname": "thumbnail",
@@ -42,44 +134,46 @@
    "label": "Thumbnail"
   },
   {
-   "fieldname": "duration_seconds",
-   "fieldtype": "Int",
-   "label": "Duration (Seconds)"
-  },
-  {
-   "default": "Processing",
-   "fieldname": "status",
-   "fieldtype": "Select",
-   "label": "Status",
-   "options": "\nProcessing\nReady\nFailed"
-  },
-  {
-   "fieldname": "view_count",
-   "fieldtype": "Int",
-   "label": "View Count"
-  },
-  {
-   "fieldname": "route",
-   "fieldtype": "Data",
-   "label": "Route"
-  },
-  {
-   "default": "0",
-   "fieldname": "is_public",
-   "fieldtype": "Check",
-   "label": "Is Public"
+   "fieldname": "section_drive",
+   "fieldtype": "Section Break",
+   "label": "Google Drive"
   },
   {
    "fieldname": "google_drive_status",
    "fieldtype": "Select",
    "label": "Google Drive Status",
-   "options": "Pending\nSynced\nFailed"
+   "options": "Not Synced\nPending\nSynced\nFailed",
+   "default": "Not Synced",
+   "read_only": 1
+  },
+  {
+   "fieldname": "drive_file_id",
+   "fieldtype": "Data",
+   "label": "Drive File ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_drive",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "drive_link",
+   "fieldtype": "Data",
+   "label": "Drive Link",
+   "options": "URL",
+   "read_only": 1
+  },
+  {
+   "fieldname": "drive_error",
+   "fieldtype": "Small Text",
+   "label": "Drive Error",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-07-14 18:19:00.940192",
+ "modified": "2026-10-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Recorder",
  "name": "Screen Recording",
@@ -103,5 +197,6 @@
  "rows_threshold_for_grid_search": 20,
  "sort_field": "modified",
  "sort_order": "DESC",
- "states": []
+ "states": [],
+ "title_field": "title"
 }

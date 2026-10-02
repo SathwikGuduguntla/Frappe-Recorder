@@ -1,44 +1,93 @@
 {
  "actions": [],
- "allow_rename": 1,
+ "allow_rename": 0,
  "creation": "2026-07-14 18:20:48.327572",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "enable_auto_backup",
+  "enabled",
+  "folder_link",
+  "folder_id",
+  "folder_name",
+  "keep_local_copy",
+  "section_oauth",
   "client_id",
-  "data_mqnd",
-  "authorization_code"
+  "client_secret",
+  "column_break_oauth",
+  "connected_email",
+  "refresh_token"
  ],
  "fields": [
   {
-   "default": "0",
-   "fieldname": "enable_auto_backup",
+   "fieldname": "enabled",
    "fieldtype": "Check",
-   "label": "Enable Auto Backup"
+   "label": "Store Recordings In Google Drive",
+   "default": "0"
+  },
+  {
+   "fieldname": "folder_link",
+   "fieldtype": "Data",
+   "label": "Drive Folder Link",
+   "description": "Paste the link of the Google Drive folder recordings should be stored in, e.g. https://drive.google.com/drive/folders/..."
+  },
+  {
+   "fieldname": "folder_id",
+   "fieldtype": "Data",
+   "label": "Folder ID",
+   "read_only": 1
+  },
+  {
+   "fieldname": "folder_name",
+   "fieldtype": "Data",
+   "label": "Folder Name",
+   "read_only": 1
+  },
+  {
+   "fieldname": "keep_local_copy",
+   "fieldtype": "Check",
+   "label": "Keep A Copy On This Site",
+   "default": "1",
+   "description": "If unchecked, the local file is removed once it is safely in Drive and playback is streamed from Drive."
+  },
+  {
+   "fieldname": "section_oauth",
+   "fieldtype": "Section Break",
+   "label": "Google OAuth Client"
   },
   {
    "fieldname": "client_id",
    "fieldtype": "Data",
-   "label": "Client ID"
+   "label": "Client ID",
+   "description": "Leave empty to use the client from Google Settings."
   },
   {
-   "fieldname": "data_mqnd",
+   "fieldname": "client_secret",
    "fieldtype": "Password",
-   "label": "Client Secret",
-   "options": "Hidden / Encrypted"
+   "label": "Client Secret"
   },
   {
-   "fieldname": "authorization_code",
-   "fieldtype": "Code",
-   "label": "Authorization Code"
+   "fieldname": "column_break_oauth",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "connected_email",
+   "fieldtype": "Data",
+   "label": "Connected Google Account",
+   "read_only": 1
+  },
+  {
+   "fieldname": "refresh_token",
+   "fieldtype": "Password",
+   "label": "Refresh Token",
+   "hidden": 1,
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2026-07-14 18:23:24.069209",
+ "modified": "2026-10-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Recorder",
  "name": "Google Drive Settings",

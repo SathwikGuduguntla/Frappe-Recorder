@@ -1,158 +1,288 @@
 <template>
-  <div class="max-w-3xl mx-auto my-10 p-6 bg-white border border-gray-200 rounded-xl shadow-sm">
-    <div class="mb-6">
-      <h1 class="text-2xl font-bold text-gray-900">Screen Recorder Studio</h1>
-      <p class="text-gray-500 text-sm mt-1">Capture your full workspace interface with integrated system and microphone inputs.</p>
+  <div class="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-12">
+    <!-- Not supported -->
+    <div v-if="!supported" class="rounded-xl border border-outline-gray-2 bg-surface-base p-8 text-center">
+      <p class="text-lg font-semibold text-ink-gray-9">This browser cannot record video</p>
+      <p class="mt-2 text-base text-ink-gray-6">Open this page in a recent version of Chrome, Edge or Firefox on a computer.</p>
     </div>
 
-    <div class="mb-6 bg-gray-950 rounded-lg aspect-video flex items-center justify-center overflow-hidden border border-gray-800 shadow-inner relative">
-      <video 
-        ref="previewVideo" 
-        autoplay 
-        muted 
-        playsinline 
-        class="w-full h-full object-contain"
-        :class="{ 'hidden': !streamActive }"
-      ></video>
-      
-      <div v-if="!streamActive && !isUploading" class="text-center text-gray-500 p-4">
-        <div class="w-12 h-12 rounded-full bg-gray-900 border border-gray-800 flex items-center justify-center mx-auto mb-3">
-          <span class="w-3 h-3 bg-red-500 rounded-full"></span>
+    <!-- Setup -->
+    <template v-else-if="phase === 'idle' || phase === 'countdown'">
+      <div class="text-center">
+        <h1 class="text-[28px] font-semibold leading-tight tracking-tight text-ink-gray-9">Record a video</h1>
+        <p class="mt-2 text-base text-ink-gray-6">
+          Capture your screen, your camera, or both. You get a link to share the moment you stop.
+        </p>
+      </div>
+
+      <div class="mt-8 rounded-xl border border-outline-gray-2 bg-surface-base p-5 shadow-sm sm:p-6">
+        <div class="grid grid-cols-3 gap-2" role="radiogroup" aria-label="What to record">
+          <button
+            v-for="mode in modes"
+            :key="mode.value"
+            type="button"
+            role="radio"
+            :aria-checked="options.mode === mode.value"
+            :disabled="mode.screen && !screenSupported"
+            class="flex flex-col items-center gap-2 rounded-lg border px-2 py-4 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-40"
+            :class="
+              options.mode === mode.value
+                ? 'border-outline-gray-5 bg-surface-gray-2 text-ink-gray-9'
+                : 'border-outline-gray-2 text-ink-gray-6 hover:bg-surface-gray-1'
+            "
+            @click="options.mode = mode.value"
+          >
+            <span :class="mode.icon" class="size-5" aria-hidden="true" />
+            {{ mode.label }}
+          </button>
         </div>
-        <p class="text-sm font-medium">No live media inputs active</p>
-      </div>
 
-      <div v-if="isUploading" class="text-center text-blue-400 p-4">
-        <span class="animate-spin border-2 border-blue-400 border-t-transparent rounded-full w-8 h-8 block mx-auto mb-3"></span>
-        <p class="text-sm">Encoding stream and uploading binary payload...</p>
-      </div>
-    </div>
-
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-      <div>
-        <label class="block text-xs font-semibold uppercase tracking-wider text-gray-400 mb-1">Recording Session Title</label>
-        <input 
-          v-model="title" 
-          type="text" 
-          :disabled="isRecording || isUploading"
-          class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none text-sm disabled:bg-gray-50 text-gray-800"
-        />
-      </div>
-      <div class="flex items-center md:pt-5">
-        <label class="inline-flex items-center cursor-pointer">
-          <input 
-            v-model="includeMic" 
-            type="checkbox" 
-            :disabled="isRecording || isUploading"
-            class="h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500" 
+        <!-- Camera preview -->
+        <div
+          v-if="currentMode.camera"
+          class="relative mt-5 flex aspect-video items-center justify-center overflow-hidden rounded-lg bg-surface-gray-10"
+        >
+          <video
+            v-show="cameraStream"
+            ref="previewEl"
+            autoplay
+            muted
+            playsinline
+            class="h-full w-full -scale-x-100 object-cover"
+            :class="{ '!h-40 !w-40 rounded-full ring-2 ring-white/90': currentMode.screen }"
           />
-          <span class="ml-2 text-sm text-gray-600 font-medium">Include External Microphone Track</span>
-        </label>
+          <p v-if="!cameraStream" class="px-6 text-center text-sm text-ink-gray-4">
+            Allow camera access to see yourself here.
+          </p>
+          <p
+            v-else-if="currentMode.screen"
+            class="absolute bottom-3 left-0 right-0 text-center text-sm text-ink-gray-4"
+          >
+            Your camera appears as a bubble in the corner of the recording.
+          </p>
+        </div>
+
+        <div class="mt-5 space-y-3">
+          <div v-if="currentMode.camera" class="flex items-center gap-3">
+            <span class="lucide-video size-4 shrink-0 text-ink-gray-5" aria-hidden="true" />
+            <label for="camera" class="w-28 shrink-0 text-base text-ink-gray-8">Camera</label>
+            <select id="camera" v-model="options.cameraId" class="form-select min-w-0 flex-1 rounded-md border-outline-gray-2 bg-surface-gray-2 py-1.5 text-base">
+              <option value="">Default camera</option>
+              <option v-for="(d, i) in devices.cameras" :key="d.deviceId" :value="d.deviceId">
+                {{ d.label || `Camera ${i + 1}` }}
+              </option>
+            </select>
+          </div>
+
+          <div class="flex items-center gap-3">
+            <span class="lucide-mic size-4 shrink-0 text-ink-gray-5" aria-hidden="true" />
+            <label for="mic" class="w-28 shrink-0 text-base text-ink-gray-8">Microphone</label>
+            <select
+              id="mic"
+              v-model="options.micId"
+              :disabled="!options.micEnabled"
+              class="form-select min-w-0 flex-1 rounded-md border-outline-gray-2 bg-surface-gray-2 py-1.5 text-base disabled:opacity-50"
+            >
+              <option value="">Default microphone</option>
+              <option v-for="(d, i) in devices.mics" :key="d.deviceId" :value="d.deviceId">
+                {{ d.label || `Microphone ${i + 1}` }}
+              </option>
+            </select>
+            <Switch v-model="options.micEnabled" aria-label="Record microphone" />
+          </div>
+
+          <div v-if="currentMode.screen" class="flex items-center gap-3">
+            <span class="lucide-volume-2 size-4 shrink-0 text-ink-gray-5" aria-hidden="true" />
+            <div class="min-w-0 flex-1">
+              <p class="text-base text-ink-gray-8">System audio</p>
+              <p class="text-sm text-ink-gray-5">Tick “Share audio” in the browser’s screen picker to include it.</p>
+            </div>
+            <Switch v-model="options.systemAudio" aria-label="Record system audio" />
+          </div>
+
+          <div class="flex items-center gap-3">
+            <span class="lucide-type size-4 shrink-0 text-ink-gray-5" aria-hidden="true" />
+            <label for="title" class="w-28 shrink-0 text-base text-ink-gray-8">Title</label>
+            <input
+              id="title"
+              v-model="title"
+              type="text"
+              maxlength="140"
+              placeholder="Optional. You can name it later."
+              class="form-input min-w-0 flex-1 rounded-md border-outline-gray-2 bg-surface-gray-2 py-1.5 text-base placeholder:text-ink-gray-4"
+            />
+          </div>
+        </div>
+
+        <p v-if="error" role="alert" class="mt-4 rounded-md bg-surface-red-2 px-3 py-2 text-base text-ink-red-7">
+          {{ error }}
+        </p>
+
+        <button
+          type="button"
+          class="mt-6 flex w-full items-center justify-center gap-2.5 rounded-lg bg-surface-red-6 px-4 py-3 text-lg font-medium text-white transition hover:bg-surface-red-7 disabled:opacity-60"
+          :disabled="phase !== 'idle'"
+          @click="start(title)"
+        >
+          <span class="size-3 rounded-full bg-white" aria-hidden="true" />
+          Start recording
+        </button>
+        <p v-if="session.drive_active" class="mt-3 flex items-center justify-center gap-1.5 text-sm text-ink-gray-5">
+          <span class="lucide-cloud-upload size-3.5" aria-hidden="true" />
+          Recordings are also saved to Google Drive.
+        </p>
+      </div>
+    </template>
+
+    <!-- Recording -->
+    <div
+      v-else-if="phase === 'recording' || phase === 'paused'"
+      class="rounded-xl border border-outline-gray-2 bg-surface-base p-6 text-center shadow-sm sm:p-10"
+    >
+      <div class="flex items-center justify-center gap-2.5 text-base font-medium" :class="phase === 'paused' ? 'text-ink-amber-7' : 'text-ink-red-7'">
+        <span class="size-2.5 rounded-full bg-current" :class="{ 'animate-pulse': phase === 'recording' }" />
+        {{ phase === 'paused' ? 'Paused' : 'Recording' }}
+      </div>
+      <p class="mt-3 text-[64px] font-semibold leading-none tabular-nums tracking-tight text-ink-gray-9" role="timer">
+        {{ formatDuration(elapsed) }}
+      </p>
+      <p class="mt-3 text-base text-ink-gray-6">
+        {{ currentMode.screen ? 'Switch to the window you want to show. Come back here to stop.' : 'You are on camera.' }}
+      </p>
+
+      <video
+        v-if="currentMode.camera"
+        ref="previewEl"
+        autoplay
+        muted
+        playsinline
+        class="mx-auto mt-6 -scale-x-100 bg-surface-gray-10 object-cover"
+        :class="currentMode.screen ? 'size-32 rounded-full' : 'aspect-video w-full max-w-md rounded-lg'"
+      />
+
+      <div class="mt-8 flex flex-wrap items-center justify-center gap-2">
+        <Button
+          size="lg"
+          :icon-left="phase === 'paused' ? 'lucide-play' : 'lucide-pause'"
+          :label="phase === 'paused' ? 'Resume' : 'Pause'"
+          @click="phase === 'paused' ? resume() : pause()"
+        />
+        <Button
+          v-if="options.micEnabled"
+          size="lg"
+          :icon-left="micMuted ? 'lucide-mic-off' : 'lucide-mic'"
+          :label="micMuted ? 'Unmute' : 'Mute'"
+          @click="toggleMic"
+        />
+        <Button size="lg" variant="solid" theme="red" icon-left="lucide-square" label="Stop and share" @click="finish" />
+        <Button size="lg" variant="ghost" label="Discard" @click="confirmDiscard" />
       </div>
     </div>
 
-    <div class="flex flex-wrap items-center gap-3 border-t border-gray-100 pt-5">
-      <button 
-        v-if="!isRecording" 
-        @click="startRecording" 
-        :disabled="isUploading"
-        class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white text-sm font-semibold rounded-lg shadow-sm transition flex items-center gap-2"
-      >
-        <span class="w-2.5 h-2.5 bg-white rounded-full"></span>
-        Start Capturing Screen
-      </button>
-
-      <button 
-        v-else 
-        @click="stopRecording" 
-        class="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white text-sm font-semibold rounded-lg shadow-sm transition flex items-center gap-2 animate-pulse"
-      >
-        <span class="w-2.5 h-2.5 bg-white rounded-sm"></span>
-        Stop & Save Session
-      </button>
-
-      <router-link to="/library" class="px-5 py-2.5 bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 text-sm font-medium rounded-lg shadow-sm transition ml-auto">
-        Back to Library
-      </router-link>
+    <!-- Saving -->
+    <div v-else-if="phase === 'finishing'" class="rounded-xl border border-outline-gray-2 bg-surface-base p-10 text-center shadow-sm">
+      <LoadingIndicator class="mx-auto size-6 text-ink-gray-6" />
+      <p class="mt-4 text-lg font-medium text-ink-gray-9">Saving your recording</p>
+      <p class="mt-1 text-base text-ink-gray-6">
+        {{ uploadPending > 0 ? `${formatSize(uploadPending)} left to upload. Keep this tab open.` : 'Creating your share link.' }}
+      </p>
     </div>
 
-    <div v-if="shareUrl" class="mt-6 p-4 bg-green-50 border border-green-200 rounded-lg flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-      <div>
-        <p class="text-sm font-bold text-green-900">🎉 Broadcast Clip Compiled Successfully!</p>
-        <p class="text-xs text-green-700 mt-0.5">The raw recording record has been committed directly to your database logs.</p>
+    <!-- Upload failed -->
+    <div v-else-if="phase === 'failed'" class="rounded-xl border border-outline-gray-2 bg-surface-base p-8 text-center shadow-sm">
+      <p class="text-lg font-semibold text-ink-gray-9">The recording could not be uploaded</p>
+      <p role="alert" class="mx-auto mt-2 max-w-md text-base text-ink-gray-6">{{ error }}</p>
+      <div class="mt-6 flex justify-center gap-2">
+        <Button size="lg" variant="solid" icon-left="lucide-download" label="Download recording" @click="downloadLocal" />
+        <Button size="lg" label="Discard" @click="confirmDiscard" />
       </div>
-      <a :href="shareUrl" target="_blank" class="px-3 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-md shadow transition text-center whitespace-nowrap">
-        Open Shared Link
-      </a>
+    </div>
+
+    <!-- Countdown -->
+    <div v-if="phase === 'countdown'" class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/70">
+      <p class="text-[10rem] font-semibold leading-none text-white tabular-nums" aria-live="assertive">{{ countdown }}</p>
+      <p class="mt-4 text-lg text-white/80">Recording starts in a moment</p>
+      <button type="button" class="mt-8 rounded-lg bg-white/15 px-4 py-2 text-base font-medium text-white hover:bg-white/25" @click="discard">
+        Cancel
+      </button>
     </div>
   </div>
 </template>
 
 <script setup>
-import { ref } from 'vue'
-import { useRecorder } from '../composables/useRecorder'
+import { computed, nextTick, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+import { Button, LoadingIndicator, Switch, dialog } from 'frappe-ui'
+import { formatDuration, formatSize, session } from '@/api'
+import { MODES, isRecordingSupported, isScreenCaptureSupported, useRecorder } from '@/composables/useRecorder'
 
-const title = ref('Capture Stream — ' + new Date().toLocaleDateString())
-const includeMic = ref(true)
-const shareUrl = ref(null)
-const streamActive = ref(false)
-const previewVideo = ref(null)
+const router = useRouter()
+const supported = isRecordingSupported()
+const screenSupported = isScreenCaptureSupported()
+const modes = MODES
+const title = ref('')
+const previewEl = ref(null)
 
-const { isRecording, isUploading, start, stop } = useRecorder()
+const {
+  phase,
+  error,
+  elapsed,
+  countdown,
+  uploadPending,
+  options,
+  devices,
+  cameraStream,
+  micMuted,
+  start,
+  stop,
+  pause,
+  resume,
+  toggleMic,
+  discard,
+  localBlob,
+  onAutoFinish,
+} = useRecorder()
 
-// Global capture cache layers
-let globalStream = null
+const currentMode = computed(() => modes.find((m) => m.value === options.mode))
 
-async function startRecording() {
-  shareUrl.value = null
-  try {
-    // 1. Initialize screen capture parameters
-    const screenStream = await navigator.mediaDevices.getDisplayMedia({
-      video: true,
-      audio: true 
-    })
-    
-    globalStream = screenStream
+// The preview <video> is re-created when the layout switches between phases.
+watch(
+  [cameraStream, previewEl],
+  async () => {
+    await nextTick()
+    if (previewEl.value) previewEl.value.srcObject = cameraStream.value
+  },
+  { immediate: true },
+)
 
-    // 2. Connect binary stream directly to visual video container element 
-    if (previewVideo.value) {
-      previewVideo.value.srcObject = screenStream
-      streamActive.value = true
-    }
-
-    // 3. Initiate the backend document processing sequence via our useRecorder composable hook
-    // The composable handles the audio mixing internally or captures configuration defaults
-    await start(title.value, null, includeMic.value)
-    
-    // Wire automated callback fallback hooks if the native client clicks browser "Stop Sharing" bubble
-    screenStream.getVideoTracks()[0].onended = () => {
-      stopRecording()
-    }
-
-  } catch (error) {
-    console.error('Session configuration aborted:', error)
-    alert('User cancelled capture permissions or layout selection context failed.')
-  }
+function openRecording(recording) {
+  router.push({ name: 'Watch', params: { token: recording.token }, query: { new: 1 } })
 }
 
-async function stopRecording() {
-  // 1. Trigger the stop method and catch the backend resource mapping response payload context
-  const result = await stop()
-  
-  // 2. Clear visual presentation data links safely
-  if (globalStream) {
-    globalStream.getTracks().forEach(track => track.stop())
-  }
-  
-  if (previewVideo.value) {
-    previewVideo.value.srcObject = null
-  }
-  
-  streamActive.value = false
+async function finish() {
+  const recording = await stop()
+  if (recording) openRecording(recording)
+}
 
-  // 3. Bind the returned sharing link to display the generated distribution card layout view
-  if (result && result.share_url) {
-    shareUrl.value = result.share_url
-  }
+// The browser's own "Stop sharing" button ends the recording too.
+onAutoFinish(openRecording)
+
+function confirmDiscard() {
+  dialog.danger({
+    title: 'Discard this recording?',
+    message: 'The video will be deleted and cannot be recovered.',
+    confirmLabel: 'Discard',
+    onConfirm: () => discard(),
+  })
+}
+
+function downloadLocal() {
+  const blob = localBlob()
+  if (!blob) return
+  const link = document.createElement('a')
+  link.href = URL.createObjectURL(blob)
+  link.download = `${title.value || 'recording'}.${blob.type.includes('mp4') ? 'mp4' : 'webm'}`
+  link.click()
+  setTimeout(() => URL.revokeObjectURL(link.href), 10000)
 }
 </script>
