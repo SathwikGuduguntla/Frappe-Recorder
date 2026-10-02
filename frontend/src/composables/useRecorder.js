@@ -1,6 +1,8 @@
 import { computed, reactive, ref, shallowRef, watch } from 'vue'
 import { call } from 'frappe-ui'
 
+import { composeCameraBubble } from './compositor'
+
 const CHUNK_INTERVAL_MS = 3000
 const UPLOAD_RETRIES = 5
 const API = 'frappe_recorder.api.recording'
@@ -80,6 +82,7 @@ export function useRecorder() {
 	)
 
 	let mediaRecorder = null
+	let compositor = null
 	let audioContext = null
 	let thumbnail = null
 	let chunks = []
@@ -193,9 +196,15 @@ export function useRecorder() {
 			return
 		}
 
-		const videoTrack = usesScreen.value
+		const sourceTrack = usesScreen.value
 			? screenStream.value.getVideoTracks()[0]
 			: cameraStream.value.getVideoTracks()[0]
+		let videoTrack = sourceTrack
+		if (settings.mode === 'Screen + Camera' && cameraStream.value) {
+			// the bubble is drawn into the video itself, so it is there whatever is shared
+			compositor = composeCameraBubble(sourceTrack, cameraStream.value.getVideoTracks()[0])
+			videoTrack = compositor.track
+		}
 		recordedStream.value = new MediaStream([videoTrack, ...buildAudioTracks()])
 
 		const mimeType = pickMimeType()
@@ -214,7 +223,7 @@ export function useRecorder() {
 		}
 
 		// the browser's own "Stop sharing" bar ends the recording too
-		if (usesScreen.value) videoTrack.addEventListener('ended', () => isActive.value && stop())
+		if (usesScreen.value) sourceTrack.addEventListener('ended', () => isActive.value && stop())
 
 		await openFloatingControls().catch(() => {})
 
@@ -387,6 +396,8 @@ export function useRecorder() {
 	}
 
 	function teardownCapture() {
+		compositor?.stop()
+		compositor = null
 		stopStream(screenStream.value)
 		screenStream.value = null
 		recordedStream.value = null
@@ -498,14 +509,14 @@ export function useRecorder() {
 	// ---- floating controls (Document Picture-in-Picture) --------------------
 
 	/**
-	 * Opens an always-on-top mini window with the camera bubble and the
-	 * stop/pause controls, so they stay reachable (and the camera bubble ends up
-	 * in the screen recording) while the person works in other windows.
+	 * Opens an always-on-top mini window with the stop/pause controls, so they
+	 * stay reachable while the person works in other windows. (The camera is not
+	 * shown there: it is already drawn into the recording.)
 	 */
 	async function openFloatingControls() {
 		// camera-only recordings don't need it: the page itself is the preview
 		if (!window.documentPictureInPicture || pipWindow.value || !usesScreen.value) return
-		const size = usesCamera.value ? { width: 240, height: 320 } : { width: 320, height: 96 }
+		const size = { width: 320, height: 96 }
 
 		const win = await window.documentPictureInPicture.requestWindow(size)
 		for (const sheet of document.styleSheets) {

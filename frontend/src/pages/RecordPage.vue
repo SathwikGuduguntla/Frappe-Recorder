@@ -368,11 +368,6 @@
 
 		<Teleport v-if="recorder.pipWindow.value" :to="recorder.pipWindow.value.document.body">
 			<FloatingControls
-				:camera-stream="
-					recorder.settings.mode === 'Screen + Camera'
-						? recorder.cameraStream.value
-						: null
-				"
 				:phase="recorder.phase.value"
 				:countdown-value="recorder.countdownValue.value"
 				:elapsed-ms="recorder.elapsedMs.value"

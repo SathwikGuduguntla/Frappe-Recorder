@@ -144,6 +144,8 @@ def finalize_recording(recording, duration_seconds=0, thumbnail=None):
 	if should_auto_upload(doc.owner):
 		doc.google_drive_status = "Queued"
 	doc.save()
+	# made private while it was still being recorded
+	sync_media_privacy(doc)
 
 	frappe.enqueue(
 		"frappe_recorder.api.recording.post_process_recording",
@@ -156,13 +158,19 @@ def finalize_recording(recording, duration_seconds=0, thumbnail=None):
 
 
 def attach_video_file(doc, path):
-	"""Register the already-written video as a File attached to the recording.
+	attach_file(doc, path, "video_file")
 
-	The video is on disk already, so the File must not re-read it: that would load the
-	whole recording into memory and reject anything over System Settings' upload limit
-	(10 MB by default), which every recording longer than a minute or so exceeds.
+
+def attach_file(doc, path, fieldname):
+	"""Register a file already written to public/files as a File attached to the recording.
+
+	The File must not re-read it: for a video that would load the whole recording into
+	memory and reject anything over System Settings' upload limit (10 MB by default),
+	which every recording longer than a minute or so exceeds. It also keeps each
+	recording's files its own: Frappe would otherwise point identical uploads at one
+	shared file, which breaks when one recording's files are moved to private storage.
 	"""
-	file_name = get_video_file_name(doc)
+	file_name = os.path.basename(path)
 	file_doc = frappe.get_doc(
 		{
 			"doctype": "File",
@@ -173,7 +181,7 @@ def attach_video_file(doc, path):
 			"content_hash": get_file_hash(path),
 			"attached_to_doctype": "Screen Recording",
 			"attached_to_name": doc.name,
-			"attached_to_field": "video_file",
+			"attached_to_field": fieldname,
 			"is_private": 0,
 			"folder": "Home/Attachments",
 		}
@@ -186,6 +194,7 @@ def attach_video_file(doc, path):
 		frappe.clear_last_message()
 		file_doc.set_new_name()
 		file_doc.db_insert()
+	return file_doc.file_url
 
 
 def get_file_hash(path):
@@ -225,7 +234,7 @@ def fix_video_metadata(doc):
 	import subprocess
 
 	ffmpeg = shutil.which("ffmpeg")
-	path = frappe.get_site_path("public", doc.video_file.lstrip("/")) if doc.video_file else None
+	path = get_video_path(doc)
 	if not ffmpeg or not path or not os.path.exists(path):
 		return
 
@@ -254,19 +263,10 @@ def save_thumbnail(doc, data_url):
 	if len(content) > 5 * 1024 * 1024:
 		return None
 	extension = "png" if "png" in header else "jpg"
-	file_doc = frappe.get_doc(
-		{
-			"doctype": "File",
-			"file_name": f"thumbnail-{doc.share_id}.{extension}",
-			"attached_to_doctype": "Screen Recording",
-			"attached_to_name": doc.name,
-			"attached_to_field": "thumbnail",
-			"is_private": 0,
-			"content": content,
-		}
-	)
-	file_doc.save(ignore_permissions=True)
-	return file_doc.file_url
+	path = frappe.get_site_path("public", "files", f"thumbnail-{doc.share_id}.{extension}")
+	with open(path, "wb") as f:
+		f.write(content)
+	return attach_file(doc, path, "thumbnail")
 
 
 @frappe.whitelist()
@@ -393,8 +393,45 @@ def update_recording(recording, **fields):
 		get_owned_doc("Recording Folder", doc.folder)
 	if not (doc.title or "").strip():
 		frappe.throw(_("Title cannot be empty"))
+	privacy_changed = doc.has_value_changed("is_public")
 	doc.save()
+	if privacy_changed:
+		sync_media_privacy(doc)
 	return get_recording(doc.share_id)
+
+
+def sync_media_privacy(doc):
+	"""Keep the video and thumbnail files as private as the recording.
+
+	Public recordings are served as public files (fast, seekable, cacheable). A private
+	recording's files are moved to private storage, where Frappe only serves them to
+	people who can read the recording, so the old `/files/...` URL stops working.
+	"""
+	is_private = 0 if cint(doc.is_public) else 1
+	for fieldname in ("video_file", "thumbnail"):
+		for name in frappe.get_all(
+			"File",
+			filters={
+				"attached_to_doctype": "Screen Recording",
+				"attached_to_name": doc.name,
+				"attached_to_field": fieldname,
+				"is_private": 1 - is_private,
+			},
+			pluck="name",
+		):
+			file_doc = frappe.get_doc("File", name)
+			file_doc.is_private = is_private
+			file_doc.save(ignore_permissions=True)
+			doc.db_set(fieldname, file_doc.file_url, update_modified=False)
+
+
+def get_video_path(doc):
+	"""Path on disk of the recording's video, whether it is stored public or private."""
+	if not doc.video_file:
+		return None
+	if doc.video_file.startswith("/private/files/"):
+		return frappe.get_site_path("private", "files", doc.video_file.rsplit("/", 1)[-1])
+	return frappe.get_site_path("public", "files", doc.video_file.rsplit("/", 1)[-1])
 
 
 @frappe.whitelist(methods=["POST"])

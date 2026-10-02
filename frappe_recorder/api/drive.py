@@ -261,7 +261,9 @@ def upload_recording(recording):
 		doc.db_set({"google_drive_status": "Failed", "drive_error": "Google Drive is not connected."})
 		return
 
-	path = frappe.get_site_path("public", doc.video_file.lstrip("/"))
+	from frappe_recorder.api.recording import get_video_path
+
+	path = get_video_path(doc)
 	doc.db_set({"google_drive_status": "Uploading", "drive_error": None})
 	frappe.db.commit()
 	try:
