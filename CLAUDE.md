@@ -49,7 +49,7 @@ pre-commit run --all-files
 All three DocTypes grant permissions only to System Manager. Regular users never touch them through the Desk or `frappe.client`; every operation goes through `frappe_recorder/api.py`, which writes with `ignore_permissions=True` after doing its own check:
 
 - `_get_owned_doc(token)` — logged in, and `doc.owner` or a System Manager.
-- `_get_viewable_doc(token)` — anyone if `is_public`, otherwise owner only.
+- `_get_viewable_doc(token)` — anyone if `is_public`, otherwise the owner or a System Manager.
 
 A new endpoint must go through one of these helpers. Recordings are addressed by their 12-character `token` (the share-link secret), never by the document name (`REC-#####`). `_serialize` returns a reduced field set to non-owners — keep owner-only fields (Drive status, file size, `is_public`) inside its `is_owner` block.
 
@@ -58,10 +58,10 @@ A new endpoint must go through one of these helpers. Recordings are addressed by
 The share link has to exist before the upload finishes, so recording is three calls:
 
 1. `create_recording` inserts the doc with status `Recording` and reserves the token and `video_file` name.
-2. `upload_chunk` appends bytes to the file. Chunks are strictly ordered by `chunks_received`: a repeated index is acknowledged and ignored (client retry), a skipped index is an error.
+2. `upload_chunk` appends bytes to the file. Chunks are strictly ordered by `chunks_received`: a repeated index is acknowledged and ignored (client retry), a skipped index is an error. The row is locked for the write, and the file is truncated to `bytes_received` first, so a retry never duplicates bytes.
 3. `finalize_recording` sets status `Ready`, saves the thumbnail, and queues the Drive upload if Drive is active.
 
-The client side is `frontend/src/composables/useRecorder.js`, a state machine (`idle → countdown → recording ⇄ paused → finishing`, plus `failed`). `MediaRecorder` emits a blob every 2 s; `pumpUploads` sends them one request at a time, in order, batching whatever queued up meanwhile, retrying with backoff but giving up on any 4xx. All chunks are also kept in memory so a failed upload can still be downloaded locally. Leaving the page or discarding deletes the server-side recording.
+The client side is `frontend/src/composables/useRecorder.js`, a state machine (`idle → countdown → recording ⇄ paused → finishing`, plus `failed`). `MediaRecorder` emits a blob every 2 s; `pumpUploads` sends them one request at a time, in order, batching whatever queued up meanwhile, retrying with backoff but giving up on any 4xx. All chunks are also kept in memory so a failed upload can still be downloaded locally. Discarding, or navigating away inside the app, deletes the server-side recording; closing or reloading the tab only shows the `beforeunload` warning and leaves it in `Recording`.
 
 `composables/compositor.js` handles Screen + Camera mode by drawing both onto a canvas and recording the canvas track. Its frame loop is driven by a Web Worker timer on purpose — `requestAnimationFrame` stalls when the tab is in the background, which is exactly when people are presenting.
 
@@ -93,10 +93,10 @@ Uses only `requests` against the Drive REST API — the app has no Python depend
 
 `frontend/src/api.js` is the single place that names backend methods; pages call `api.*` rather than `call()` directly. `upload_chunk` uses raw `fetch` with `FormData` and `window.csrf_token` because the body is binary. `session` is a shared reactive object populated once by `loadSession()`.
 
-`Recording Folder` (tree-style DocType) and the `folder` link on `Screen Recording` exist in the schema but nothing in `api.py` or the frontend uses them yet.
+`Recording Folder` (a plain DocType with a parent link and `is_group`, not a Frappe tree/`NestedSet`) and the `folder` link on `Screen Recording` exist in the schema but nothing in `api.py` or the frontend uses them yet.
 
 ## Conventions
 
 - Python: tabs, double quotes, 110-column lines (ruff config in `pyproject.toml`). User-facing strings go through `_()`.
-- Frontend: Prettier with no semicolons, single quotes, 2-space indent (`frontend/.prettierrc.json`) — this differs from the tab indentation `.editorconfig` prescribes for the rest of the repo.
+- Frontend: no semicolons, single quotes (`frontend/.prettierrc.json`); the existing files use 2-space indent and long lines. That file does not set indent or width, and the root `.editorconfig` prescribes tabs and 99 columns for `*.js`/`*.vue`, which Prettier also reads — so `pre-commit run --all-files` may reformat `frontend/src` to tabs. Check the diff before committing a formatting run.
 - `@` aliases `frontend/src`.
