@@ -21,9 +21,18 @@ app_license = "agpl-3.0"
 # 	}
 # ]
 
+# /recorder/...  -> the recorder app (record, library, settings)
+# /r/<token>      -> the share page for one recording
 website_route_rules = [
-    {"from_route": "/recorder/<path:app_path>", "to_route": "recorder"}
+	{"from_route": "/recorder/<path:app_path>", "to_route": "recorder"},
+	{"from_route": "/r/<path:app_path>", "to_route": "recorder"},
 ]
+
+scheduler_events = {
+	"hourly": ["frappe_recorder.drive.retry_pending_uploads"],
+	"daily": ["frappe_recorder.tasks.close_abandoned_recordings"],
+}
+
 # Includes in <head>
 # ------------------
 
@@ -249,4 +258,3 @@ website_route_rules = [
 # ------------
 # List of apps whose translatable strings should be excluded from this app's translations.
 # ignore_translatable_strings_from = []
-

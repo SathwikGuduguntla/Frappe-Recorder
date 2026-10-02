@@ -1,24 +1,6 @@
 node_modules
 .DS_Store
 dist
-dist-ssr
 *.local
-
-# Logs
-logs
 *.log
-npm-debug.log*
-
-# Runtime dependency directories
-node_modules/
-
-# Production build outputs
-dist/
-../frappe_recorder/public/frontend/
-
-# Cache layers
 .vite/
-.cache/
-
-# Optional: Ignore raw fonts downloaded locally if you use a CDN or npm package instead
-src/assets/Inter/

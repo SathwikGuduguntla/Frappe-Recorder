@@ -1,33 +1,34 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import Home from './pages/Home.vue' // Add this import
+import { loadSession } from '@/api'
 
 const routes = [
+  { path: '/recorder', name: 'Record', component: () => import('@/pages/Record.vue') },
+  { path: '/recorder/library', name: 'Library', component: () => import('@/pages/Library.vue') },
   {
-    path: '/',
-    name: 'Home',
-    component: Home
+    path: '/recorder/settings',
+    name: 'Settings',
+    component: () => import('@/pages/Settings.vue'),
+    meta: { managerOnly: true },
   },
-  {
-    path: '/library',
-    name: 'Library',
-    component: () => import('./pages/Library.vue'),
-  },
-  {
-    path: '/record',
-    name: 'Record',
-    component: () => import('./pages/Record.vue'),
-  },
-  {
-    path: '/share/:route',
-    name: 'Share',
-    component: () => import('./pages/Share.vue'),
-    meta: { isPublic: true }
-  }
+  // The share link. Open to anyone who has it.
+  { path: '/r/:token', name: 'Watch', component: () => import('@/pages/Watch.vue'), meta: { isPublic: true } },
+  { path: '/recorder/:pathMatch(.*)*', redirect: { name: 'Record' } },
 ]
 
 const router = createRouter({
-  history: createWebHistory('/recorder'),
+  history: createWebHistory('/'),
   routes,
+})
+
+router.beforeEach(async (to) => {
+  if (to.meta.isPublic) return true
+  const session = await loadSession()
+  if (!session.user) {
+    window.location.href = `/login?redirect-to=${encodeURIComponent(to.fullPath)}`
+    return false
+  }
+  if (to.meta.managerOnly && !session.is_manager) return { name: 'Record' }
+  return true
 })
 
 export default router

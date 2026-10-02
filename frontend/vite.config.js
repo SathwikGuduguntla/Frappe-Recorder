@@ -1,31 +1,23 @@
-import { defineConfig } from 'vite'
-import vue from '@vitejs/plugin-vue'
 import path from 'path'
+import vue from '@vitejs/plugin-vue'
+import frappeui from 'frappe-ui/vite'
+import { defineConfig } from 'vite'
 
 export default defineConfig({
-  plugins: [vue()],
-  server: {
-    port: 8080, // Frontend dev server
-    proxy: {
-      '^/(api|files|assets)': {
-        target: 'http://localhost:8000', //  Points straight to your local running Frappe backend
-        changeOrigin: true,
+  plugins: [
+    frappeui({
+      frappeProxy: true,
+      jinjaBootData: true,
+      buildConfig: {
+        outDir: '../frappe_recorder/public/frontend',
+        indexHtmlPath: '../frappe_recorder/www/recorder.html',
       },
-    },
-  },
+    }),
+    vue(),
+  ],
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
     },
-  },
-  build: {
-    outDir: '../frappe_recorder/public/frontend',
-    emptyOutDir: true,
-    commonjsOptions: {
-      include: [/feather-icons/, /node_modules/],
-    },
-  },
-  optimizeDeps: {
-    include: ['frappe-ui > feather-icons', 'showdown', 'engine.io-client'],
   },
 })
