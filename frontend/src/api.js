@@ -29,8 +29,6 @@ export const api = {
 
   getDriveSettings: () => frappeGet(DRIVE + 'get_settings'),
   saveDriveSettings: (values) => call(DRIVE + 'save_settings', values),
-  getDriveAuthUrl: () => call(DRIVE + 'get_auth_url'),
-  disconnectDrive: () => call(DRIVE + 'disconnect'),
   importFromDrive: () => call(DRIVE + 'import_from_drive'),
   retryDriveUpload: (token) => call(DRIVE + 'retry_upload', { token }),
 }

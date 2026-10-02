@@ -82,8 +82,8 @@ If a recording has no local video but has a `drive_file_id`, `stream` proxies th
 
 Uses only `requests` against the Drive REST API — the app has no Python dependencies beyond Frappe, keep it that way.
 
-- Config is the `Google Drive Settings` single. The OAuth client falls back to Frappe's built-in `Google Settings` when not set there. The refresh token is a Password field; the access token is cached in Redis.
-- OAuth: `get_auth_url` → Google → `oauth_callback` (state stored in cache per user) → redirect to `/recorder/settings?drive=<result>`. Requests the full `drive` scope because the target folder is chosen by link.
+- Config is the `Google Drive Settings` single. There is no OAuth client: the target folder is shared as "Anyone with the link → Editor", and access tokens come from the **uploader**, a Google Apps Script web app the admin deploys once (`UPLOADER_SCRIPT` in `drive.py`, shown on the settings page with the site's generated `uploader_secret` written in). `_access_token()` POSTs the secret to `uploader_url` and caches the returned token in Redis for 10 minutes.
+- Older link-shared folders need a `resourcekey` from their link; it is stored as `folder_resource_key` and sent in `X-Goog-Drive-Resource-Keys`.
 - `upload_recording` is the background job (resumable upload in 16 MB pieces). It records `Failed` + `drive_error` on the doc rather than raising. `retry_pending_uploads` (hourly) re-runs `Pending`/`Failed` ones. When `keep_local_copy` is off, the local file is removed after upload and playback switches to the Drive proxy.
 - `import_from_drive` creates `source = "Google Drive"` recordings for videos already in the folder; these never have a local file.
 
