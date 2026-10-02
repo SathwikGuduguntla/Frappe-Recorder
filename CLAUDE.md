@@ -1,0 +1,102 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+A Frappe app (installed in a bench at `../..`, Frappe v16) that records the screen and/or camera in the browser and produces a share link immediately. Two halves:
+
+- `frappe_recorder/` — Python backend: three DocTypes plus whitelisted HTTP methods.
+- `frontend/` — Vue 3 + frappe-ui + Tailwind SPA, built by Vite into the Python package.
+
+## Commands
+
+Bench commands run from the bench root (`../..`); replace `<site>` with a site that has the app installed.
+
+```bash
+# Backend tests
+bench --site <site> set-config allow_tests true          # once per site
+bench --site <site> run-tests --app frappe_recorder
+bench --site <site> run-tests --module frappe_recorder.frappe_recorder.doctype.screen_recording.test_screen_recording
+bench --site <site> run-tests --module frappe_recorder.frappe_recorder.doctype.screen_recording.test_screen_recording --test test_guest_cannot_record
+
+# After changing a DocType JSON
+bench --site <site> migrate
+
+# Frontend (from frontend/)
+yarn dev      # Vite on :8080, proxies API calls to the bench; open http://<site>:8080/recorder
+yarn build    # or, from the bench root: bench build --app frappe_recorder
+
+# Lint / format (ruff, ruff-format, prettier, eslint)
+pre-commit run --all-files
+```
+
+- The Vite dev server needs `"ignore_csrf": 1` in the site config.
+- Google Drive uploads run on the `long` queue, so a worker must be running (`bench start`) to exercise them.
+- There are no frontend tests. The only real backend tests are in `test_screen_recording.py` (it also covers `drive.parse_folder_id`); the other two test files are empty stubs.
+- CI runs the tests on pushes to `develop` and on pull requests; the linter workflow adds Frappe semgrep rules and pip-audit.
+
+## Architecture
+
+### One SPA, two URL prefixes
+
+`hooks.py` `website_route_rules` send both `/recorder/<path>` and `/r/<path>` to the `recorder` www page. `www/recorder.py` supplies boot data (CSRF token, site name, user); `www/recorder.html` is **generated** by `yarn build`, along with `public/frontend/` — both are gitignored, so never edit them and expect a fresh checkout to 404 until the frontend is built.
+
+`frontend/src/router.js` owns the routes: `/recorder` (Record), `/recorder/library`, `/recorder/settings` (System Manager only) and `/r/:token` (Watch, public). The `beforeEach` guard redirects guests to `/login` for everything except the Watch route.
+
+### Access control lives in `api.py`, not in DocType permissions
+
+All three DocTypes grant permissions only to System Manager. Regular users never touch them through the Desk or `frappe.client`; every operation goes through `frappe_recorder/api.py`, which writes with `ignore_permissions=True` after doing its own check:
+
+- `_get_owned_doc(token)` — logged in, and `doc.owner` or a System Manager.
+- `_get_viewable_doc(token)` — anyone if `is_public`, otherwise owner only.
+
+A new endpoint must go through one of these helpers. Recordings are addressed by their 12-character `token` (the share-link secret), never by the document name (`REC-#####`). `_serialize` returns a reduced field set to non-owners — keep owner-only fields (Drive status, file size, `is_public`) inside its `is_owner` block.
+
+### Recording pipeline (chunked upload)
+
+The share link has to exist before the upload finishes, so recording is three calls:
+
+1. `create_recording` inserts the doc with status `Recording` and reserves the token and `video_file` name.
+2. `upload_chunk` appends bytes to the file. Chunks are strictly ordered by `chunks_received`: a repeated index is acknowledged and ignored (client retry), a skipped index is an error.
+3. `finalize_recording` sets status `Ready`, saves the thumbnail, and queues the Drive upload if Drive is active.
+
+The client side is `frontend/src/composables/useRecorder.js`, a state machine (`idle → countdown → recording ⇄ paused → finishing`, plus `failed`). `MediaRecorder` emits a blob every 2 s; `pumpUploads` sends them one request at a time, in order, batching whatever queued up meanwhile, retrying with backoff but giving up on any 4xx. All chunks are also kept in memory so a failed upload can still be downloaded locally. Leaving the page or discarding deletes the server-side recording.
+
+`composables/compositor.js` handles Screen + Camera mode by drawing both onto a canvas and recording the canvas track. Its frame loop is driven by a Web Worker timer on purpose — `requestAnimationFrame` stalls when the tab is in the background, which is exactly when people are presenting.
+
+`tasks.close_abandoned_recordings` (daily) rescues recordings stuck in `Recording` for 12+ hours: kept as `Ready` if any bytes arrived, deleted otherwise.
+
+### File storage and streaming
+
+Paths come from helpers in `doctype/screen_recording/screen_recording.py`:
+
+- Videos: `private/files/recorder/<token>.<ext>` — private, served only through `api.stream` (so switching sharing off really revokes access). `stream` supports HTTP Range for seeking.
+- Thumbnails: `public/files/recorder/<token>.jpg`.
+
+These are plain files, not Frappe `File` documents. `on_trash` deletes the local files and deliberately leaves any Google Drive copy.
+
+If a recording has no local video but has a `drive_file_id`, `stream` proxies the bytes (and the Range header) from Google Drive.
+
+### Google Drive (`drive.py`)
+
+Uses only `requests` against the Drive REST API — the app has no Python dependencies beyond Frappe, keep it that way.
+
+- Config is the `Google Drive Settings` single. The OAuth client falls back to Frappe's built-in `Google Settings` when not set there. The refresh token is a Password field; the access token is cached in Redis.
+- OAuth: `get_auth_url` → Google → `oauth_callback` (state stored in cache per user) → redirect to `/recorder/settings?drive=<result>`. Requests the full `drive` scope because the target folder is chosen by link.
+- `upload_recording` is the background job (resumable upload in 16 MB pieces). It records `Failed` + `drive_error` on the doc rather than raising. `retry_pending_uploads` (hourly) re-runs `Pending`/`Failed` ones. When `keep_local_copy` is off, the local file is removed after upload and playback switches to the Drive proxy.
+- `import_from_drive` creates `source = "Google Drive"` recordings for videos already in the folder; these never have a local file.
+
+`Screen Recording.status` and `google_drive_status` are independent: the first tracks the recording lifecycle, the second the Drive copy.
+
+### Frontend API layer
+
+`frontend/src/api.js` is the single place that names backend methods; pages call `api.*` rather than `call()` directly. `upload_chunk` uses raw `fetch` with `FormData` and `window.csrf_token` because the body is binary. `session` is a shared reactive object populated once by `loadSession()`.
+
+`Recording Folder` (tree-style DocType) and the `folder` link on `Screen Recording` exist in the schema but nothing in `api.py` or the frontend uses them yet.
+
+## Conventions
+
+- Python: tabs, double quotes, 110-column lines (ruff config in `pyproject.toml`). User-facing strings go through `_()`.
+- Frontend: Prettier with no semicolons, single quotes, 2-space indent (`frontend/.prettierrc.json`) — this differs from the tab indentation `.editorconfig` prescribes for the rest of the repo.
+- `@` aliases `frontend/src`.
