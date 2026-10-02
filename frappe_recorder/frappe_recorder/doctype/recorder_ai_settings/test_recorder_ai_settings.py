@@ -133,6 +133,8 @@ class TestRecorderAI(FrappeTestCase):
 		self.assertFalse(config["server_ai"])
 		self.assertIn("{transcript}", config["prompts"]["insights"])
 		self.assertEqual(set(config["prompts"]), {"insights", "part", "insights_from_parts", "sop", "ask"})
+		# WebLLM's JSON mode fails without an explicit schema
+		self.assertEqual(config["insights_schema"]["required"], ["summary", "highlights", "questions"])
 
 	def test_times(self):
 		self.assertEqual(ai.parse_time("2:15"), 135)
