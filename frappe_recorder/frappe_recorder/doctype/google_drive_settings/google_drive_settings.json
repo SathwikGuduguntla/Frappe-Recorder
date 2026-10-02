@@ -1,44 +1,50 @@
 {
  "actions": [],
  "allow_rename": 1,
- "creation": "2026-07-14 18:20:48.327572",
+ "creation": "2026-07-14 18:11:11.223634",
  "doctype": "DocType",
  "engine": "InnoDB",
  "field_order": [
-  "enable_auto_backup",
+  "enabled",
   "client_id",
-  "data_mqnd",
-  "authorization_code"
+  "client_secret",
+  "redirect_uri"
  ],
  "fields": [
   {
    "default": "0",
-   "fieldname": "enable_auto_backup",
+   "fieldname": "enabled",
    "fieldtype": "Check",
-   "label": "Enable Auto Backup"
+   "label": "Enable Google Drive Storage"
   },
   {
+   "depends_on": "enabled",
    "fieldname": "client_id",
    "fieldtype": "Data",
-   "label": "Client ID"
+   "label": "Client ID",
+   "mandatory_depends_on": "enabled"
   },
   {
-   "fieldname": "data_mqnd",
+   "depends_on": "enabled",
+   "fieldname": "client_secret",
    "fieldtype": "Password",
    "label": "Client Secret",
-   "options": "Hidden / Encrypted"
+   "mandatory_depends_on": "enabled"
   },
   {
-   "fieldname": "authorization_code",
-   "fieldtype": "Code",
-   "label": "Authorization Code"
+   "description": "Add this URL to the OAuth client's Authorized redirect URIs in Google Cloud Console.",
+   "fieldname": "redirect_uri",
+   "fieldtype": "Data",
+   "is_virtual": 1,
+   "label": "Authorized Redirect URI",
+   "read_only": 1
   }
  ],
  "grid_page_length": 50,
- "index_web_pages_for_search": 1,
+ "index_web_pages_for_search": 0,
  "issingle": 1,
  "links": [],
- "modified": "2026-07-14 18:23:24.069209",
+ "modified": "2026-10-02 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Recorder",
  "name": "Google Drive Settings",
@@ -48,16 +54,17 @@
    "create": 1,
    "delete": 1,
    "email": 1,
+   "export": 1,
    "print": 1,
    "read": 1,
+   "report": 1,
    "role": "System Manager",
    "share": 1,
    "write": 1
   }
  ],
  "row_format": "Dynamic",
- "rows_threshold_for_grid_search": 20,
- "sort_field": "modified",
+ "sort_field": "creation",
  "sort_order": "DESC",
  "states": []
 }
