@@ -223,16 +223,18 @@ def oauth_callback(code: str | None = None, state: str | None = None, error: str
 		expires_in_sec=max(cint(tokens.get("expires_in")) - 120, 60),
 	)
 
+	result = "connected"
 	if settings.folder_id:
 		try:
 			settings.db_set("folder_name", _get_folder(settings.folder_id).get("name"))
 		except Exception:
-			# Connected, but the folder is not reachable from this account;
-			# the settings page shows that when it is saved again.
+			# Connected, but this account cannot use the folder; the settings
+			# page says so instead of leaving it to a failed upload later.
 			frappe.clear_last_message()
+			result = "folder"
 
 	frappe.db.commit()
-	return finish("connected")
+	return finish(result)
 
 
 @frappe.whitelist(methods=["POST"])
