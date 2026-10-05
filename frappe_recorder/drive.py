@@ -52,6 +52,12 @@ UPLOADER_SCRIPT = """/**
  */
 var SECRET = '{secret}';
 
+// Opening the web app URL in a browser shows this, so you can check that the
+// deployment is reachable without signing in.
+function doGet() {{
+  return reply({{ ok: true, uploader: 'Frappe Recorder', message: 'The uploader is running.' }});
+}}
+
 function doPost(e) {{
   var body = {{}};
   try {{
@@ -215,14 +221,14 @@ def _access_token() -> str:
 
 	try:
 		response = requests.post(settings.uploader_url, json={"secret": _uploader_secret()}, timeout=TIMEOUT)
+	except requests.RequestException as e:
+		frappe.throw(_("Could not reach the Drive uploader: {0}").format(e))
+	try:
 		data = response.json()
-	except (requests.RequestException, ValueError):
-		frappe.throw(
-			_(
-				"The Drive uploader did not answer. Check that the script is deployed as a web app "
-				"with “Who has access” set to “Anyone”, and that its URL ends with /exec."
-			)
-		)
+		if not isinstance(data, dict):
+			raise ValueError
+	except ValueError:
+		frappe.throw(_uploader_problem(response))
 	if not data.get("ok") or not data.get("access_token"):
 		frappe.throw(
 			_(
@@ -234,6 +240,46 @@ def _access_token() -> str:
 		settings.db_set("connected_email", data["email"])
 	frappe.cache().set_value(ACCESS_TOKEN_CACHE_KEY, data["access_token"], expires_in_sec=ACCESS_TOKEN_TTL)
 	return data["access_token"]
+
+
+def _uploader_problem(response) -> str:
+	"""Explains a reply from the uploader URL that isn't the script's JSON. Google answers
+	with an HTML page instead when the deployment is set up wrong; say which mistake it is."""
+	text = response.text or ""
+	final_url = str(getattr(response, "url", "") or "")
+	title = re.search(r"<title[^>]*>(.*?)</title>", text, re.I | re.S)
+	title = re.sub(r"\s+", " ", title.group(1)).strip() if title else ""
+
+	if "accounts.google.com" in final_url or "ServiceLogin" in text or title.startswith("Sign in"):
+		return _(
+			"Google asked for a sign-in instead of running the uploader, so the web app is not open to "
+			"“Anyone”. In Apps Script, open Deploy → Manage deployments → Edit (pencil), set “Who has "
+			"access” to “Anyone” (not “Anyone with Google account”), choose Version: New version and "
+			"Deploy. If “Anyone” is missing, your Google Workspace admin has turned it off; deploy the "
+			"script from a personal Gmail account instead."
+		)
+	if "Script function not found" in text:
+		return _(
+			"The deployed script has no doPost function. Paste the whole script from this page into the "
+			"Apps Script editor, save it, then Deploy → Manage deployments → Edit → Version: New version "
+			"→ Deploy. Deployments keep the code they were made with, so saving alone is not enough."
+		)
+	if "Authorization is required" in text or "authorization" in title.lower():
+		return _(
+			"The uploader has not been given access to Google Drive. In the Apps Script editor pick the "
+			"function requestDriveAccess, press Run and allow access, then try again."
+		)
+	if response.status_code == 404 or "unable to open the file" in text:
+		return _(
+			"Google could not find that web app. Copy the Web app URL again from Deploy → Manage "
+			"deployments; it ends with /exec."
+		)
+	return _(
+		"The Drive uploader answered with a web page instead of the script's reply (HTTP {0}{1}). Open "
+		"the uploader URL in a private browser window: it should show “The uploader is running.” If it "
+		"does not, redeploy the script with “Execute as: Me”, “Who has access: Anyone” and Version: New "
+		"version."
+	).format(response.status_code, f", “{title}”" if title else "")
 
 
 def _auth_headers() -> dict:
