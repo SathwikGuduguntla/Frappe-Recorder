@@ -217,3 +217,37 @@ class TestGoogleDriveSettings(FrappeTestCase):
 		settings = drive.get_settings()
 		self.assertEqual(settings["method"], "google")
 		self.assertFalse(settings["uploader_url"])
+
+	@patch("frappe_recorder.drive.requests")
+	def test_uploader_web_pages_are_explained(self, requests):
+		def html_page(text, status_code=200, url=UPLOADER_URL):
+			res = response(status_code=status_code)
+			res.json.side_effect = ValueError("Expecting value")
+			res.text = text
+			res.url = url
+			return res
+
+		cases = [
+			(
+				html_page(
+					"<title>Sign in - Google Accounts</title>", url="https://accounts.google.com/v3/signin"
+				),
+				"Who has access",
+			),
+			(html_page("<div>Script function not found: doPost</div>"), "New version"),
+			(html_page("<title>Error</title>Authorization is required to perform that action."), "Run"),
+			(
+				html_page("Sorry, unable to open the file at this time.", status_code=404),
+				"Manage deployments",
+			),
+			(html_page("<title>Something else</title>", status_code=500), "HTTP 500"),
+		]
+		for page, expected in cases:
+			frappe.cache().delete_value(drive.ACCESS_TOKEN_CACHE_KEY)
+			requests.post.return_value = page
+			with self.assertRaises(frappe.ValidationError) as error:
+				drive.save_uploader(UPLOADER_URL)
+			self.assertIn(expected, str(error.exception))
+
+	def test_uploader_script_can_be_checked_in_a_browser(self):
+		self.assertIn("function doGet()", drive.get_settings()["uploader_script"])
