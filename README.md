@@ -21,6 +21,8 @@ No Google Cloud project, OAuth client or "Connect" step is needed.
    - paste the script shown on the settings page (it already contains this site's secret) and save;
    - **Deploy → New deployment → Web app**, with *Execute as: Me* and *Who has access: Anyone*. Allow access when Google asks; if it says the app isn't verified, choose **Advanced → Go to (project name)**, since it is your own script;
    - paste the **Web app URL** into the settings page.
+
+   To check the deployment, open the Web app URL in a private browser window: it should show `"The uploader is running."`. A Google sign-in page means *Who has access* is not **Anyone** (Google Workspace admins can turn that option off; deploy from a personal Gmail account then). After editing the script, deploy it again with **Deploy → Manage deployments → Edit → Version: New version**, since a deployment keeps the code it was made with.
 4. Save. The recorder checks the uploader and the folder straight away and turns Drive storage on.
 
 Uploads run in the background queue (`long`), so a worker must be running. Failed uploads are retried hourly. Videos are uploaded as the Google account that deployed the script, and use its storage quota.

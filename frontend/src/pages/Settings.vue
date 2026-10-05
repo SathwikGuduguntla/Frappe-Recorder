@@ -94,7 +94,12 @@
               Allow access when Google asks. If it says the app isn’t verified, choose
               <strong>Advanced → Go to (project name)</strong>; it is your own script.
             </li>
-            <li>Paste the <strong>Web app URL</strong> here.</li>
+            <li>
+              Paste the <strong>Web app URL</strong> here. Opened in a private window, it should show
+              “The uploader is running.” — a Google sign-in page means <strong>Who has access</strong> is not
+              <strong>Anyone</strong>. After changing the script, use <strong>Deploy → Manage deployments → Edit →
+              Version: New version</strong>, or Google keeps running the old code.
+            </li>
           </ol>
           <input
             v-model="form.uploader_url"
