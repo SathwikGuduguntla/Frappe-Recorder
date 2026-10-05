@@ -33,35 +33,6 @@
         </div>
       </section>
 
-      <section class="border-b border-outline-gray-1 p-5">
-        <p class="text-base font-semibold text-ink-gray-9">Optional: Ollama server</p>
-        <p class="mt-1 text-sm text-ink-gray-5">
-          Leave empty to keep everything in the browser. With an
-          <a class="underline" href="https://ollama.com" target="_blank" rel="noopener">Ollama</a>
-          server, summaries and SOPs can also be made for owners whose device has no WebGPU, and viewers can ask
-          questions about a video.
-        </p>
-        <div class="mt-3 grid gap-4 sm:grid-cols-2">
-          <input
-            v-model="form.ollama_url"
-            type="url"
-            aria-label="Ollama URL"
-            placeholder="http://localhost:11434"
-            class="form-input w-full rounded-md border-outline-gray-2 bg-surface-gray-2 py-1.5 text-base placeholder:text-ink-gray-4"
-          />
-          <input
-            v-model="form.ollama_model"
-            aria-label="Ollama model"
-            placeholder="qwen2.5:7b"
-            class="form-input w-full rounded-md border-outline-gray-2 bg-surface-gray-2 py-1.5 text-base placeholder:text-ink-gray-4"
-          />
-        </div>
-        <div v-if="settings.ollama_url" class="mt-3 flex items-center gap-3">
-          <Button size="sm" label="Test connection" :loading="testing" @click="test" />
-          <p v-if="testResult" class="text-sm" :class="testResult.ok ? 'text-ink-green-8' : 'text-ink-amber-8'">{{ testResult.text }}</p>
-        </div>
-      </section>
-
       <div class="flex items-center justify-end gap-3 p-5">
         <p v-if="saveError" role="alert" class="mr-auto text-base text-ink-red-7">{{ saveError }}</p>
         <Button type="submit" variant="solid" label="Save" :loading="saving" :disabled="!dirty" />
@@ -89,11 +60,9 @@ const llmLabels = {
 
 const loading = ref(true)
 const saving = ref(false)
-const testing = ref(false)
 const saveError = ref('')
-const testResult = ref(null)
 const settings = ref({ whisper_models: [], llm_models: [] })
-const form = reactive({ enabled: true, whisper_model: '', llm_model: '', ollama_url: '', ollama_model: '' })
+const form = reactive({ enabled: true, whisper_model: '', llm_model: '' })
 
 function apply(data) {
   settings.value = data
@@ -101,8 +70,6 @@ function apply(data) {
     enabled: !!data.enabled,
     whisper_model: data.whisper_model || '',
     llm_model: data.llm_model || '',
-    ollama_url: data.ollama_url || '',
-    ollama_model: data.ollama_model || '',
   })
 }
 
@@ -111,9 +78,7 @@ const dirty = computed(() => {
   return (
     form.enabled !== !!s.enabled ||
     form.whisper_model !== (s.whisper_model || '') ||
-    form.llm_model !== (s.llm_model || '') ||
-    form.ollama_url !== (s.ollama_url || '') ||
-    form.ollama_model !== (s.ollama_model || '')
+    form.llm_model !== (s.llm_model || '')
   )
 })
 
@@ -122,26 +87,11 @@ async function save() {
   saveError.value = ''
   try {
     apply(await api.saveAiSettings({ ...form, enabled: form.enabled ? 1 : 0 }))
-    testResult.value = null
     toast.success('Settings saved')
   } catch (e) {
     saveError.value = errorMessage(e)
   } finally {
     saving.value = false
-  }
-}
-
-async function test() {
-  testing.value = true
-  try {
-    const result = await api.testOllama()
-    testResult.value = result.found
-      ? { ok: true, text: `Connected. “${settings.value.ollama_model}” is installed.` }
-      : { ok: false, text: `Connected, but “${settings.value.ollama_model}” is not installed. Run: ollama pull ${settings.value.ollama_model}` }
-  } catch (e) {
-    testResult.value = { ok: false, text: errorMessage(e) }
-  } finally {
-    testing.value = false
   }
 }
 

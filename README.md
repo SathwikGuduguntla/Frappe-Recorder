@@ -33,7 +33,6 @@ On by default, under **Transcripts and AI notes** in `/recorder/settings`. Nothi
 - The summary, highlights and SOP are written in the same browser by a small open-source model (**Qwen2.5** or **Llama 3.2** through [WebLLM](https://github.com/mlc-ai/web-llm)). This needs WebGPU: Chrome or Edge on a computer with a graphics card. If the model is already downloaded, the summary starts by itself; otherwise the owner clicks **Write summary**.
 - Models are downloaded once from Hugging Face and kept in the browser's cache. Whisper base is about 145 MB; Qwen2.5 1.5B is about 1 GB.
 - Viewers just read the results, on any device.
-- **Optional Ollama server:** set an Ollama URL and model to also make summaries and SOPs for owners whose device has no WebGPU, and to let viewers ask questions about a video. Ollama needs a machine with about 8 GB RAM for a 7B model, so it can't run on shared hosting; it can run on another machine.
 
 #### Notes
 

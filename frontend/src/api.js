@@ -48,11 +48,8 @@ export const api = {
   saveSop: (token, sop, model) => call(AI + 'save_sop', { token, sop, model }),
   reportAiFailure: (token, kind, error) => call(AI + 'report_failure', { token, kind, error }),
   resetAi: (token) => call(AI + 'reset_ai', { token }),
-  generateOnServer: (token, kind) => call(AI + 'generate_on_server', { token, kind }),
-  askServer: (token, question) => call(AI + 'ask', { token, question }),
   getAiSettings: () => frappeGet(AI + 'get_ai_settings'),
   saveAiSettings: (values) => call(AI + 'save_ai_settings', values),
-  testOllama: () => call(AI + 'test_ollama'),
 }
 
 async function frappeGet(method, params = {}) {

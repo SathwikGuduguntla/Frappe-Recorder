@@ -113,7 +113,7 @@
           <div class="text-base leading-relaxed text-ink-gray-8" v-html="sopHtml" />
           <div class="mt-4 flex gap-2 border-t border-outline-gray-1 pt-3">
             <Button size="sm" icon-left="lucide-copy" label="Copy" @click="copyText(ai.sop)" />
-            <Button v-if="recording.is_owner" size="sm" variant="ghost" label="Write again" :disabled="!!job || !canWrite" @click="runSop" />
+            <Button v-if="recording.is_owner" size="sm" variant="ghost" label="Write again" :disabled="!!job || !canWriteHere" @click="runSop" />
           </div>
         </template>
         <StepState v-else kind="sop" />
@@ -148,7 +148,6 @@ const chat = ref([])
 const now = ref(Date.now())
 
 let clock = null
-let pollTimer = null
 
 function emptyAi() {
   return { transcript_status: 'Not Started', transcript: [], insights_status: 'Not Started', summary: '', highlights: [], questions: [], sop_status: 'Not Started', sop: '' }
@@ -170,8 +169,7 @@ const hasAnything = computed(() => ai.value.transcript.length || ai.value.summar
 // Viewers see the panel once there is something to read; owners always (when enabled).
 const visible = computed(() => config.value?.enabled && props.recording.status === 'Ready' && (props.recording.is_owner || hasAnything.value))
 const canWriteHere = computed(() => props.recording.is_owner && capability.value.webgpu)
-const canWrite = computed(() => canWriteHere.value || (props.recording.is_owner && config.value?.server_ai))
-const canAsk = computed(() => ai.value.transcript.length && (canWriteHere.value || config.value?.server_ai))
+const canAsk = computed(() => ai.value.transcript.length && canWriteHere.value)
 
 const activeSegment = computed(() => {
   const t = props.currentTime
@@ -212,14 +210,6 @@ const jobDetail = computed(() => {
 
 async function refresh() {
   ai.value = { ...emptyAi(), ...(await api.getAi(token)) }
-  schedulePoll()
-}
-
-// Server (Ollama) jobs report back through the stored status.
-function schedulePoll() {
-  clearTimeout(pollTimer)
-  const waiting = ['transcript_status', 'insights_status', 'sop_status'].some((k) => ai.value[k] === 'Processing')
-  if (waiting) pollTimer = setTimeout(() => refresh().catch(() => {}), 4000)
 }
 
 onMounted(async () => {
@@ -238,13 +228,12 @@ onMounted(async () => {
 })
 
 // The transcript starts by itself for the owner; the summary too when its model is
-// already on this device (or a server does it). Otherwise the owner chooses to start it,
+// already on this device. Otherwise the owner chooses to start it,
 // since the first download is large.
 async function autoRun() {
   if (ai.value.transcript_status === 'Not Started') await runTranscript()
   if (ai.value.transcript_status !== 'Ready' || ai.value.insights_status !== 'Not Started') return
   if (canWriteHere.value && llmCached.value) await runInsights()
-  else if (!canWriteHere.value && config.value.server_ai) await runInsights()
 }
 
 // ---------------------------------------------------------------- steps
@@ -288,7 +277,6 @@ async function runTranscript() {
 }
 
 async function runInsights() {
-  if (!canWriteHere.value) return runOnServer('insights')
   startJob('insights')
   try {
     const data = await engine.writeInsights(config.value, ai.value.transcript, onProgress)
@@ -303,7 +291,6 @@ async function runInsights() {
 }
 
 async function runSop() {
-  if (!canWriteHere.value) return runOnServer('sop')
   startJob('sop')
   try {
     const sop = await engine.writeSop(config.value, ai.value.transcript, onProgress)
@@ -316,15 +303,6 @@ async function runSop() {
   }
 }
 
-async function runOnServer(kind) {
-  try {
-    ai.value = { ...emptyAi(), ...(await api.generateOnServer(token, kind)) }
-    schedulePoll()
-  } catch (e) {
-    error.value = errorMessage(e)
-  }
-}
-
 async function ask(text) {
   text = (text || '').trim()
   if (!text || job.value) return
@@ -332,18 +310,14 @@ async function ask(text) {
   const item = { question: text, answer: '', pending: true }
   chat.value.push(item)
   try {
-    if (canWriteHere.value) {
-      startJob('ask')
-      item.answer = await engine.answer(config.value, ai.value.transcript, text, onProgress)
-      llmCached.value = true
-    } else {
-      item.answer = (await api.askServer(token, text)).answer
-    }
+    startJob('ask')
+    item.answer = await engine.answer(config.value, ai.value.transcript, text, onProgress)
+    llmCached.value = true
   } catch (e) {
     item.answer = errorMessage(e)
   } finally {
     item.pending = false
-    if (job.value) endJob()
+    endJob()
   }
 }
 
@@ -372,7 +346,6 @@ function warnBeforeLeaving(event) {
 window.addEventListener('beforeunload', warnBeforeLeaving)
 
 onBeforeUnmount(() => {
-  clearTimeout(pollTimer)
   clearInterval(clock)
   window.removeEventListener('beforeunload', warnBeforeLeaving)
 })
@@ -396,7 +369,6 @@ const StepState = defineComponent({
       const p = (text, cls = 'text-base text-ink-gray-6') => h('p', { class: cls }, text)
 
       if (job.value) return p('Working on it…')
-      if (status === 'Processing') return p('Being written on the server… this page updates by itself.')
       if (stepProps.kind !== 'transcript' && ai.value.transcript_status !== 'Ready') {
         return p(owner ? 'The transcript comes first.' : step.none)
       }
@@ -409,9 +381,9 @@ const StepState = defineComponent({
         ])
       }
 
-      if (!canWrite.value) {
+      if (!canWriteHere.value) {
         return p(
-          'This device can’t run the writing model: it needs a browser with WebGPU (Chrome or Edge on a computer with a graphics card). Open this page there, or ask your admin to set up an Ollama server.',
+          'This device can’t run the writing model: it needs a browser with WebGPU (Chrome or Edge on a computer with a graphics card). Open this page there.',
         )
       }
       const label = stepProps.kind === 'sop' ? 'Create SOP' : 'Write summary'

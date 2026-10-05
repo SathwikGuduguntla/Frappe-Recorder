@@ -96,7 +96,6 @@ The models run in the **recording owner's browser**, not on the server, so the f
 - `src/ai/whisper.worker.js` runs Whisper through `@huggingface/transformers` (WebGPU, else WASM); `src/ai/llm.worker.js` hosts WebLLM; `src/ai/engine.js` drives both: it downloads the video from `api.stream`, decodes its audio at 16 kHz, transcribes in 5-minute blocks, and splits long transcripts into parts for the ~4K-token browser models. `components/AiPanel.vue` is the Watch page UI (Assistant · Highlights · Transcript · SOP).
 - The server only stores and serves results: `save_transcript` / `save_insights` / `save_sop` (owner, via `_get_owned_doc`) clean what the browser sends; `get_ai` (via `_get_viewable_doc`) is what viewers read. Text is stored as JSON/Markdown in Long Text fields on `Screen Recording`, with independent `transcript_status` / `insights_status` / `sop_status`.
 - The prompts live once, in `ai.PROMPTS` (Python format strings), and reach the browser through `get_ai_config`; `engine.fill` fills them the same way.
-- Optional Ollama (`Recorder AI Settings.ollama_url`): `generate_on_server` queues `run_on_server` on the `long` queue for owners without WebGPU, and `ask` answers viewers' questions (rate-limited). Ollama is called with `requests`.
 - `frontend/package.json` replaces `sharp` and `onnxruntime-node` with empty stubs (`frontend/stubs/`): transformers.js only needs them in Node, and installing them downloads native binaries.
 
 ### Frontend API layer
