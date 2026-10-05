@@ -12,14 +12,12 @@ The video is uploaded in small pieces while you record, so the link is ready as 
 
 #### Google Drive setup
 
-Open `/recorder/settings` as a System Manager.
+Open `/recorder/settings` as a System Manager and connect the Google account that should own the videos, in one of two ways:
 
-1. **One time only, add a Google OAuth client** (so Google can show its sign-in screen for this site). If Frappe's **Google Settings** already has one, skip this step.
-   - In [Google Cloud Console](https://console.cloud.google.com/apis/library/drive.googleapis.com), enable the **Google Drive API**, and set up the OAuth consent screen if asked (while it is in testing, add your Google account as a test user).
-   - [Create an OAuth client ID](https://console.cloud.google.com/apis/credentials) of the type **Web application**, with the **Authorized redirect URI** shown on the settings page (`https://<your-site>/api/method/frappe.integrations.google_oauth.callback`).
-   - Paste the Client ID and Client secret into the settings page. They are saved in Frappe's Google Settings.
-2. Click **Connect Google Drive** and sign in with the Google account that should own the videos. If Google says the app isn't verified, choose **Advanced → Continue**.
-3. Paste the link of a Drive folder that account can add files to, and save. Drive storage turns on.
+- **Sign in with Google.** Click **Connect Google Drive** and allow access. This needs an OAuth client, added once: in [Google Cloud Console](https://console.cloud.google.com/apis/library/drive.googleapis.com) enable the **Google Drive API** (set up the consent screen if asked; while it is in testing, add your account as a test user), [create an OAuth client ID](https://console.cloud.google.com/apis/credentials) of type **Web application** with the redirect URI shown on the settings page (`https://<your-site>/api/method/frappe.integrations.google_oauth.callback`), and paste the Client ID and secret into the settings page. They are saved in Frappe's Google Settings, so skip this if that already has a client.
+- **Apps Script** (no Google Cloud project): open [script.google.com/create](https://script.google.com/create) with that account, paste the script shown on the settings page (it already contains this site's secret) and save; **Deploy → New deployment → Web app** with *Execute as: Me* and *Who has access: Anyone*, allow access (if Google says the app isn't verified, choose **Advanced → Go to (project name)**); paste the **Web app URL** into the settings page and click **Connect**.
+
+Then paste the link of a Drive folder that account can add files to, and save. Drive storage turns on.
 
 Uploads run in the background queue (`long`), so a worker must be running. Failed uploads are retried hourly. Videos are uploaded as the connected Google account and use its storage quota.
 

@@ -3,14 +3,20 @@
 
 """Google Drive storage for recordings.
 
-A System Manager signs in with the Google account that should own the videos
-("Connect Google Drive") and pastes the link of a Drive folder that account can
-add to. Every finished recording is then uploaded to that folder in a background
-job, and videos already sitting in the folder can be imported into the library.
+A System Manager connects the Google account that should own the videos and pastes
+the link of a Drive folder that account can add to. Every finished recording is then
+uploaded to that folder in a background job, and videos already sitting in the folder
+can be imported into the library.
 
-Sign-in uses Frappe's own Google integration: the OAuth client lives in the core
-`Google Settings` single, the consent screen comes back through
-`frappe.integrations.google_oauth.callback`, and the refresh token is stored here.
+Google only accepts uploads made as a Google account, so the site needs that account's
+access tokens. There are two ways to get them; both end in `_access_token()`:
+
+- Google sign-in ("Connect Google Drive"). Uses Frappe's own Google integration: the
+  OAuth client lives in the core `Google Settings` single, the consent screen comes back
+  through `frappe.integrations.google_oauth.callback`, and the refresh token is stored here.
+- The uploader, for sites without an OAuth client: a small Google Apps Script the admin
+  deploys once as a web app. It hands this server a short-lived access token of the admin's
+  account. Its source, with this site's secret written in, is shown on the settings page.
 
 Drive calls use only `requests`, so the app has no extra Python dependencies.
 """
@@ -36,10 +42,54 @@ REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 CALLBACK_PATH = "/api/method/frappe.integrations.google_oauth.callback"
 SCOPE = "https://www.googleapis.com/auth/drive"
 SETTINGS_PAGE = "/recorder/settings"
+UPLOADER_URL_PATTERN = re.compile(
+	r"^https://script\.google\.com/(a/macros/[^/]+|macros)/s/[A-Za-z0-9_-]+/exec$"
+)
 
 ACCESS_TOKEN_CACHE_KEY = "frappe_recorder:drive_access_token"
+# Apps Script tokens last about an hour but the script can't say how much is left
+# of the one it returns, so they are only reused for a few minutes.
+UPLOADER_TOKEN_TTL = 10 * 60
 UPLOAD_CHUNK_SIZE = 16 * 1024 * 1024  # must be a multiple of 256 KiB
 TIMEOUT = 60
+
+UPLOADER_SCRIPT = """/**
+ * Frappe Recorder: Google Drive uploader.
+ *
+ * Lends the recorder at {site} a short-lived access token of the Google
+ * account that deploys this script, so it can upload recordings into the
+ * Drive folder set in the recorder. Keep this code private: the secret
+ * below is what lets only that site use it.
+ */
+var SECRET = '{secret}';
+
+function doPost(e) {{
+  var body = {{}};
+  try {{
+    body = JSON.parse(e.postData.contents);
+  }} catch (err) {{}}
+  if (body.secret !== SECRET) {{
+    return reply({{ ok: false, error: 'Wrong secret' }});
+  }}
+  return reply({{
+    ok: true,
+    access_token: ScriptApp.getOAuthToken(),
+    email: Session.getEffectiveUser().getEmail(),
+  }});
+}}
+
+// Never called. It is here so Apps Script asks for Google Drive access when
+// the script is deployed.
+function requestDriveAccess() {{
+  DriveApp.getRootFolder();
+}}
+
+function reply(data) {{
+  return ContentService.createTextOutput(JSON.stringify(data)).setMimeType(
+    ContentService.MimeType.JSON
+  );
+}}
+"""
 
 
 # ---------------------------------------------------------------- settings
@@ -53,6 +103,17 @@ def _refresh_token() -> str | None:
 	return _settings().get_password("refresh_token", raise_exception=False)
 
 
+def _uploader_secret() -> str:
+	"""The secret written into the uploader script; created the first time it is needed."""
+	settings = _settings()
+	secret = settings.get_password("uploader_secret", raise_exception=False)
+	if not secret:
+		secret = frappe.generate_hash(length=40)
+		settings.uploader_secret = secret
+		settings.save(ignore_permissions=True)
+	return secret
+
+
 def google_client_ready() -> bool:
 	"""True when Frappe's Google Settings hold an OAuth client to sign in with."""
 	google = frappe.get_single(GOOGLE_SETTINGS)
@@ -61,8 +122,17 @@ def google_client_ready() -> bool:
 	)
 
 
+def connection_method() -> str | None:
+	""""google" (signed in), "uploader" (Apps Script) or None."""
+	if _refresh_token():
+		return "google"
+	if _settings().uploader_url:
+		return "uploader"
+	return None
+
+
 def is_connected() -> bool:
-	return bool(_refresh_token())
+	return bool(connection_method())
 
 
 def is_active() -> bool:
@@ -120,6 +190,9 @@ def get_settings():
 		"google_client_ready": google_client_ready(),
 		"client_id": google.client_id,
 		"redirect_uri": redirect_uri(),
+		"uploader_url": settings.uploader_url,
+		"uploader_script": UPLOADER_SCRIPT.format(site=frappe.local.site, secret=_uploader_secret()),
+		"method": connection_method(),
 		"connected": is_connected(),
 		"connected_email": settings.connected_email,
 	}
@@ -173,6 +246,33 @@ def save_google_client(client_id: str, client_secret: str | None = None):
 
 
 @frappe.whitelist(methods=["POST"])
+def save_uploader(uploader_url: str):
+	"""Connects through the Apps Script uploader instead of Google sign-in."""
+	_only_manager()
+	uploader_url = (uploader_url or "").strip()
+	if not UPLOADER_URL_PATTERN.match(uploader_url):
+		frappe.throw(
+			_(
+				"That does not look like an Apps Script web app URL. It starts with "
+				"https://script.google.com/macros/s/ and ends with /exec."
+			)
+		)
+	settings = _settings()
+	settings.update({"uploader_url": uploader_url, "refresh_token": None, "connected_email": None})
+	settings.save()
+	frappe.cache().delete_value(ACCESS_TOKEN_CACHE_KEY)
+
+	# Check the uploader and the folder straight away, so a mistake is reported now
+	# rather than by a failed upload later.
+	_access_token()
+	if settings.folder_id:
+		settings.db_set("folder_name", _get_folder(settings.folder_id).get("name"))
+		# Connecting with a folder already chosen is the whole setup: switch storage on.
+		settings.db_set("enabled", 1)
+	return get_settings()
+
+
+@frappe.whitelist(methods=["POST"])
 def connect():
 	"""The Google sign-in URL. Google sends the admin back through Frappe's callback,
 	which calls `authorize_access` and then returns to the settings page."""
@@ -213,8 +313,7 @@ def authorize_access(code: str | None = None, **kwargs):
 		frappe.throw(_("Google did not grant offline access to Drive. Try connecting again."))
 
 	settings = _settings()
-	settings.refresh_token = tokens["refresh_token"]
-	settings.connected_email = None
+	settings.update({"refresh_token": tokens["refresh_token"], "uploader_url": None, "connected_email": None})
 	settings.save()
 	_cache_access_token(tokens)
 
@@ -242,7 +341,7 @@ def disconnect():
 		except requests.RequestException:
 			pass
 	settings = _settings()
-	settings.update({"refresh_token": None, "connected_email": None, "enabled": 0})
+	settings.update({"refresh_token": None, "uploader_url": None, "connected_email": None, "enabled": 0})
 	settings.save()
 	frappe.cache().delete_value(ACCESS_TOKEN_CACHE_KEY)
 	return get_settings()
@@ -264,6 +363,8 @@ def _access_token() -> str:
 
 	refresh_token = _refresh_token()
 	if not refresh_token:
+		if _settings().uploader_url:
+			return _uploader_access_token()
 		frappe.throw(_("Google Drive is not connected. Connect it in the recorder settings."))
 
 	from frappe.integrations.google_oauth import GoogleOAuth
@@ -279,6 +380,31 @@ def _access_token() -> str:
 		)
 	_cache_access_token(tokens)
 	return tokens["access_token"]
+
+
+def _uploader_access_token() -> str:
+	settings = _settings()
+	try:
+		response = requests.post(settings.uploader_url, json={"secret": _uploader_secret()}, timeout=TIMEOUT)
+		data = response.json()
+	except (requests.RequestException, ValueError):
+		frappe.throw(
+			_(
+				"The Drive uploader did not answer. Check that the script is deployed as a web app "
+				"with “Who has access” set to “Anyone”, and that its URL ends with /exec."
+			)
+		)
+	if not data.get("ok") or not data.get("access_token"):
+		frappe.throw(
+			_(
+				"The Drive uploader refused the request ({0}). Copy the script from the settings page again."
+			).format(data.get("error") or response.status_code)
+		)
+
+	if data.get("email") and data["email"] != settings.connected_email:
+		settings.db_set("connected_email", data["email"])
+	frappe.cache().set_value(ACCESS_TOKEN_CACHE_KEY, data["access_token"], expires_in_sec=UPLOADER_TOKEN_TTL)
+	return data["access_token"]
 
 
 def _auth_headers() -> dict:

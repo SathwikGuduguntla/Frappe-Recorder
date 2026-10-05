@@ -33,6 +33,7 @@ export const api = {
   saveGoogleClient: (clientId, clientSecret) =>
     call(DRIVE + 'save_google_client', { client_id: clientId, client_secret: clientSecret }),
   connectDrive: () => call(DRIVE + 'connect'),
+  saveUploader: (uploaderUrl) => call(DRIVE + 'save_uploader', { uploader_url: uploaderUrl }),
   disconnectDrive: () => call(DRIVE + 'disconnect'),
   importFromDrive: () => call(DRIVE + 'import_from_drive'),
   retryDriveUpload: (token) => call(DRIVE + 'retry_upload', { token }),

@@ -26,59 +26,122 @@
 
         <div v-if="settings.connected" class="mt-2 flex flex-wrap items-center justify-between gap-3">
           <p class="text-sm text-ink-gray-7">
-            Connected as <strong>{{ settings.connected_email || 'your Google account' }}</strong>. Videos are uploaded as this
-            account and use its storage.
+            Connected as <strong>{{ settings.connected_email || 'your Google account' }}</strong>
+            {{ settings.method === 'uploader' ? 'through the Apps Script uploader' : 'with Google sign-in' }}. Videos are
+            uploaded as this account and use its storage.
           </p>
           <Button label="Disconnect" :loading="connecting" @click="disconnect" />
         </div>
 
-        <div v-else-if="settings.google_client_ready" class="mt-2 flex flex-col items-start gap-3">
-          <p class="text-sm text-ink-gray-5">Sign in with the Google account that should own the uploaded videos.</p>
-          <Button variant="solid" icon-left="lucide-log-in" label="Connect Google Drive" :loading="connecting" @click="connect" />
-        </div>
+        <template v-else>
+          <div class="mt-3 inline-flex rounded-lg bg-surface-gray-2 p-0.5" role="tablist" aria-label="How to connect">
+            <button
+              v-for="m in methods"
+              :key="m.id"
+              type="button"
+              role="tab"
+              :aria-selected="method === m.id"
+              class="rounded-md px-3 py-1 text-sm"
+              :class="method === m.id ? 'bg-surface-base font-medium text-ink-gray-9 shadow-sm' : 'text-ink-gray-6 hover:text-ink-gray-8'"
+              @click="method = m.id"
+            >
+              {{ m.label }}
+            </button>
+          </div>
 
-        <div v-else class="mt-2">
-          <p class="text-sm text-ink-gray-5">
-            One-time setup, so Google can show its sign-in screen for this site. You need a Google Cloud project (free).
-          </p>
-          <ol class="mt-3 list-decimal space-y-2 pl-5 text-sm text-ink-gray-7">
-            <li>
-              In Google Cloud Console,
-              <a class="underline" href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener">enable the Google Drive API</a>.
-              If Google asks you to set up the OAuth consent screen, do so; while it is in testing, add your Google account as a test user.
-            </li>
-            <li>
-              <a class="underline" href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Create an OAuth client ID</a>
-              of the type <strong>Web application</strong>, with this <strong>Authorized redirect URI</strong>:
-              <div class="mt-2 flex items-center gap-2">
-                <code class="min-w-0 flex-1 truncate rounded-md bg-surface-gray-2 px-2 py-1.5 font-mono text-xs text-ink-gray-7">{{ settings.redirect_uri }}</code>
-                <Button icon-left="lucide-copy" label="Copy" @click="copyRedirect" />
-              </div>
-            </li>
-            <li>Paste the Client ID and Client secret here.</li>
-          </ol>
-          <div class="mt-3 grid gap-3 sm:grid-cols-2">
-            <input
-              v-model="client.id"
-              aria-label="Client ID"
-              placeholder="Client ID (….apps.googleusercontent.com)"
-              autocomplete="off"
-              class="form-input w-full rounded-md border-outline-gray-2 bg-surface-gray-2 py-1.5 text-sm placeholder:text-ink-gray-4"
-            />
-            <input
-              v-model="client.secret"
-              type="password"
-              aria-label="Client secret"
-              placeholder="Client secret"
-              autocomplete="off"
-              class="form-input w-full rounded-md border-outline-gray-2 bg-surface-gray-2 py-1.5 text-sm placeholder:text-ink-gray-4"
-            />
+          <!-- Google sign-in: needs an OAuth client in Frappe's Google Settings -->
+          <div v-if="method === 'google'" class="mt-4">
+          <div v-if="settings.google_client_ready" class="flex flex-col items-start gap-3">
+            <p class="text-sm text-ink-gray-5">Sign in with the Google account that should own the uploaded videos.</p>
+            <Button variant="solid" icon-left="lucide-log-in" label="Connect Google Drive" :loading="connecting" @click="connect" />
           </div>
-          <div class="mt-3 flex items-center gap-3">
-            <Button label="Save client" :loading="savingClient" :disabled="!client.id.trim() || !client.secret.trim()" @click="saveClient" />
-            <p v-if="clientError" role="alert" class="text-sm text-ink-red-7">{{ clientError }}</p>
+          <div v-else>
+            <p class="text-sm text-ink-gray-5">
+              One-time setup, so Google can show its sign-in screen for this site. You need a Google Cloud project (free).
+            </p>
+            <ol class="mt-3 list-decimal space-y-2 pl-5 text-sm text-ink-gray-7">
+              <li>
+                In Google Cloud Console,
+                <a class="underline" href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noopener">enable the Google Drive API</a>.
+                If Google asks you to set up the OAuth consent screen, do so; while it is in testing, add your Google account as a test user.
+              </li>
+              <li>
+                <a class="underline" href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener">Create an OAuth client ID</a>
+                of the type <strong>Web application</strong>, with this <strong>Authorized redirect URI</strong>:
+                <div class="mt-2 flex items-center gap-2">
+                  <code class="min-w-0 flex-1 truncate rounded-md bg-surface-gray-2 px-2 py-1.5 font-mono text-xs text-ink-gray-7">{{ settings.redirect_uri }}</code>
+                  <Button icon-left="lucide-copy" label="Copy" @click="copyRedirect" />
+                </div>
+              </li>
+              <li>Paste the Client ID and Client secret here.</li>
+            </ol>
+            <div class="mt-3 grid gap-3 sm:grid-cols-2">
+              <input
+                v-model="client.id"
+                aria-label="Client ID"
+                placeholder="Client ID (….apps.googleusercontent.com)"
+                autocomplete="off"
+                class="form-input w-full rounded-md border-outline-gray-2 bg-surface-gray-2 py-1.5 text-sm placeholder:text-ink-gray-4"
+              />
+              <input
+                v-model="client.secret"
+                type="password"
+                aria-label="Client secret"
+                placeholder="Client secret"
+                autocomplete="off"
+                class="form-input w-full rounded-md border-outline-gray-2 bg-surface-gray-2 py-1.5 text-sm placeholder:text-ink-gray-4"
+              />
+            </div>
+            <div class="mt-3 flex items-center gap-3">
+              <Button label="Save client" :loading="savingClient" :disabled="!client.id.trim() || !client.secret.trim()" @click="saveClient" />
+              <p v-if="clientError" role="alert" class="text-sm text-ink-red-7">{{ clientError }}</p>
+            </div>
           </div>
-        </div>
+          </div>
+
+          <!-- Apps Script uploader: no Google Cloud project needed -->
+          <div v-else class="mt-4">
+            <p class="text-sm text-ink-gray-5">
+              No Google Cloud project or OAuth client needed: a small script in your Google account lets the recorder
+              upload as you.
+            </p>
+            <ol class="mt-3 list-decimal space-y-2 pl-5 text-sm text-ink-gray-7">
+              <li>
+                Open
+                <a class="underline" href="https://script.google.com/create" target="_blank" rel="noopener">a new Apps Script project</a>
+                with the Google account that should own the uploaded videos.
+              </li>
+              <li>
+                Replace the code in the editor with this script and save. It already contains this site’s secret, so
+                keep it private.
+                <div class="mt-2 flex items-start gap-2">
+                  <pre
+                    class="max-h-40 min-w-0 flex-1 overflow-auto rounded-md bg-surface-gray-2 p-2 font-mono text-xs text-ink-gray-7"
+                  >{{ settings.uploader_script }}</pre>
+                  <Button icon-left="lucide-copy" label="Copy" @click="copyScript" />
+                </div>
+              </li>
+              <li>
+                Click <strong>Deploy → New deployment</strong>, choose the type <strong>Web app</strong>, set
+                <strong>Execute as: Me</strong> and <strong>Who has access: Anyone</strong>, then <strong>Deploy</strong>.
+                Allow access when Google asks. If it says the app isn’t verified, choose
+                <strong>Advanced → Go to (project name)</strong>; it is your own script.
+              </li>
+              <li>Paste the <strong>Web app URL</strong> here.</li>
+            </ol>
+            <div class="mt-3 flex flex-wrap items-center gap-3">
+              <input
+                v-model="uploaderUrl"
+                type="url"
+                aria-label="Web app URL"
+                placeholder="https://script.google.com/macros/s/…/exec"
+                class="form-input min-w-0 flex-1 rounded-md border-outline-gray-2 bg-surface-gray-2 py-1.5 font-mono text-sm placeholder:text-ink-gray-4"
+              />
+              <Button variant="solid" label="Connect" :loading="connecting" :disabled="!uploaderUrl.trim()" @click="saveUploader" />
+            </div>
+            <p v-if="uploaderError" role="alert" class="mt-2 text-sm text-ink-red-7">{{ uploaderError }}</p>
+          </div>
+        </template>
       </section>
 
       <section class="border-b border-outline-gray-1 p-5">
@@ -137,6 +200,13 @@ const clientError = ref('')
 const settings = ref({})
 const form = reactive({ enabled: false, folder_link: '', keep_local_copy: true })
 const client = reactive({ id: '', secret: '' })
+const methods = [
+  { id: 'google', label: 'Sign in with Google' },
+  { id: 'uploader', label: 'Apps Script' },
+]
+const method = ref('google')
+const uploaderUrl = ref('')
+const uploaderError = ref('')
 
 function apply(data) {
   settings.value = data
@@ -144,6 +214,7 @@ function apply(data) {
   form.folder_link = data.folder_link || ''
   form.keep_local_copy = !!data.keep_local_copy
   client.id = data.client_id || ''
+  uploaderUrl.value = data.uploader_url || ''
 }
 
 const status = computed(() => {
@@ -223,6 +294,24 @@ async function disconnect() {
   }
 }
 
+async function saveUploader() {
+  connecting.value = true
+  uploaderError.value = ''
+  try {
+    apply(await api.saveUploader(uploaderUrl.value))
+    toast.success('Google Drive connected')
+    loadSession(true)
+  } catch (e) {
+    uploaderError.value = errorMessage(e)
+  } finally {
+    connecting.value = false
+  }
+}
+
+async function copyScript() {
+  if (await copyText(settings.value.uploader_script)) toast.success('Script copied')
+}
+
 async function copyRedirect() {
   if (await copyText(settings.value.redirect_uri)) toast.success('Redirect URI copied')
 }
@@ -236,7 +325,10 @@ if (route.query.drive) {
 
 api
   .getDriveSettings()
-  .then(apply)
+  .then((data) => {
+    apply(data)
+    if (!data.google_client_ready) method.value = 'uploader'
+  })
   .catch((e) => (saveError.value = errorMessage(e)))
   .finally(() => (loading.value = false))
 </script>
