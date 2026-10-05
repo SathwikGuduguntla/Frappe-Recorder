@@ -80,9 +80,9 @@ If a recording has no local video but has a `drive_file_id`, `stream` proxies th
 
 ### Google Drive (`drive.py`)
 
-Uses only `requests` against the Drive REST API — the app has no Python dependencies beyond Frappe, keep it that way.
+Uses only `requests` against the Drive REST API (plus Frappe's own `google_oauth` helper for tokens) — the app has no Python dependencies beyond Frappe, keep it that way.
 
-- Config is the `Google Drive Settings` single. There is no OAuth client: the target folder is shared as "Anyone with the link → Editor", and access tokens come from the **uploader**, a Google Apps Script web app the admin deploys once (`UPLOADER_SCRIPT` in `drive.py`, shown on the settings page with the site's generated `uploader_secret` written in). `_access_token()` POSTs the secret to `uploader_url` and caches the returned token in Redis for 10 minutes.
+- Config is the `Google Drive Settings` single. Sign-in reuses Frappe's Google integration: the OAuth client (ID/secret) lives in core `Google Settings` (the recorder settings page can fill it via `save_google_client`); `connect` builds the consent URL with `create_google_oauth_state`, Google returns through `frappe.integrations.google_oauth.callback`, which calls `drive.authorize_access` to store the `refresh_token` (Password field) and `connected_email`. `_access_token()` refreshes via `GoogleOAuth("drive")` and caches the access token in Redis until shortly before it expires. The connected account must be able to add files to the folder.
 - Older link-shared folders need a `resourcekey` from their link; it is stored as `folder_resource_key` and sent in `X-Goog-Drive-Resource-Keys`.
 - `upload_recording` is the background job (resumable upload in 16 MB pieces). It records `Failed` + `drive_error` on the doc rather than raising. `retry_pending_uploads` (hourly) re-runs `Pending`/`Failed` ones. When `keep_local_copy` is off, the local file is removed after upload and playback switches to the Drive proxy.
 - `import_from_drive` creates `source = "Google Drive"` recordings for videos already in the folder; these never have a local file.

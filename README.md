@@ -5,25 +5,23 @@ Record your screen, your camera, or both in the browser and get a share link the
 - **Record** at `/recorder`: Screen + Camera (camera shown as a bubble), Screen only, or Camera only, with microphone and system audio, a 3-second countdown, pause/resume, mute and discard.
 - **Share** at `/r/<token>`: anyone with the link can watch, no sign-in. The owner can rename, switch link sharing off, download and delete. Views are counted.
 - **Library** at `/recorder/library`: all of your recordings with thumbnails and search.
-- **Google Drive** at `/recorder/settings`: paste the link of a Drive folder shared as *Anyone with the link → Editor*; every recording is then copied into that folder, and videos already in the folder can be imported into the library.
+- **Google Drive** at `/recorder/settings`: sign in with Google and paste a folder link; every recording is then copied into that folder, and videos already in the folder can be imported into the library.
 - **Transcript and AI notes** on every video: a timestamped transcript, a summary, highlights and a step-by-step SOP, with clickable times that jump the video. Made by free open-source models in the recording owner's browser: no API key, no server load, works on any hosting plan.
 
 The video is uploaded in small pieces while you record, so the link is ready as soon as you press stop, however long the recording is.
 
 #### Google Drive setup
 
-No Google Cloud project, OAuth client or "Connect" step is needed.
+Open `/recorder/settings` as a System Manager.
 
-1. In Google Drive, open the folder's **Share** dialog and set General access to **Anyone with the link**, role **Editor**. Copy the link (for example `https://drive.google.com/drive/folders/1ugelp0xHEjC-VTsvphwSai4aUfYEQ0HT?usp=sharing`).
-2. Open `/recorder/settings` as a System Manager and paste it into **Drive folder link**.
-3. One time only, set up the **Uploader**. Google only accepts uploads made by a Google account, even into a public folder, so a small Apps Script uploads as your account:
-   - open a new project at [script.google.com/create](https://script.google.com/create);
-   - paste the script shown on the settings page (it already contains this site's secret) and save;
-   - **Deploy → New deployment → Web app**, with *Execute as: Me* and *Who has access: Anyone*. Allow access when Google asks; if it says the app isn't verified, choose **Advanced → Go to (project name)**, since it is your own script;
-   - paste the **Web app URL** into the settings page.
-4. Save. The recorder checks the uploader and the folder straight away and turns Drive storage on.
+1. **One time only, add a Google OAuth client** (so Google can show its sign-in screen for this site). If Frappe's **Google Settings** already has one, skip this step.
+   - In [Google Cloud Console](https://console.cloud.google.com/apis/library/drive.googleapis.com), enable the **Google Drive API**, and set up the OAuth consent screen if asked (while it is in testing, add your Google account as a test user).
+   - [Create an OAuth client ID](https://console.cloud.google.com/apis/credentials) of the type **Web application**, with the **Authorized redirect URI** shown on the settings page (`https://<your-site>/api/method/frappe.integrations.google_oauth.callback`).
+   - Paste the Client ID and Client secret into the settings page. They are saved in Frappe's Google Settings.
+2. Click **Connect Google Drive** and sign in with the Google account that should own the videos. If Google says the app isn't verified, choose **Advanced → Continue**.
+3. Paste the link of a Drive folder that account can add files to, and save. Drive storage turns on.
 
-Uploads run in the background queue (`long`), so a worker must be running. Failed uploads are retried hourly. Videos are uploaded as the Google account that deployed the script, and use its storage quota.
+Uploads run in the background queue (`long`), so a worker must be running. Failed uploads are retried hourly. Videos are uploaded as the connected Google account and use its storage quota.
 
 #### Transcripts and AI notes
 
