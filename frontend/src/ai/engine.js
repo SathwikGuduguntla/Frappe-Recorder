@@ -2,8 +2,7 @@
 // server stores. Nothing here needs an API key: models are downloaded once from
 // Hugging Face, cached by the browser, and run on this device.
 //
-// The prompts come from the server (`get_ai_config`), so the browser and the optional
-// Ollama server write the same way.
+// The prompts come from the server (`get_ai_config`).
 
 const SAMPLE_RATE = 16000
 // The browser models read about 4,000 tokens at a time; leave room for the prompt and reply.

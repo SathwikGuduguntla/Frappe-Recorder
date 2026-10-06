@@ -9,13 +9,6 @@
         aria-label="Search recordings"
         class="form-input w-56 rounded-md border-outline-gray-2 bg-surface-base py-1.5 text-base placeholder:text-ink-gray-4"
       />
-      <Button
-        v-if="session.is_manager && session.drive_active"
-        icon-left="lucide-refresh-cw"
-        label="Import from Drive"
-        :loading="importing"
-        @click="importFromDrive"
-      />
       <Button variant="solid" icon-left="lucide-plus" label="New recording" :route="{ name: 'Record' }" />
     </div>
 
@@ -60,18 +53,8 @@
             {{ formatDate(item.creation) }} · {{ item.view_count }} {{ item.view_count === 1 ? 'view' : 'views' }}
           </p>
           <div class="mt-3 flex items-center gap-1">
-            <DriveBadge :status="item.google_drive_status" />
             <span class="ml-auto" />
             <Button variant="ghost" icon="lucide-link" tooltip="Copy link" aria-label="Copy link" @click="copyLink(item)" />
-            <Button
-              v-if="item.drive_link"
-              variant="ghost"
-              icon="lucide-external-link"
-              tooltip="Open in Google Drive"
-              aria-label="Open in Google Drive"
-              :href="item.drive_link"
-              target="_blank"
-            />
             <Button variant="ghost" icon="lucide-trash-2" tooltip="Delete" aria-label="Delete" @click="confirmDelete(item)" />
           </div>
         </div>
@@ -83,14 +66,12 @@
 <script setup>
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { Button, LoadingIndicator, dialog, toast } from 'frappe-ui'
-import { api, copyText, errorMessage, formatDate, formatDuration, session } from '@/api'
-import DriveBadge from '@/components/DriveBadge.vue'
+import { api, copyText, errorMessage, formatDate, formatDuration } from '@/api'
 
 const recordings = ref([])
 const loading = ref(true)
 const loadError = ref('')
 const search = ref('')
-const importing = ref(false)
 
 let requestId = 0
 async function load() {
@@ -122,27 +103,12 @@ async function copyLink(item) {
 function confirmDelete(item) {
   dialog.danger({
     title: `Delete “${item.title}”?`,
-    message: item.drive_link
-      ? 'The share link will stop working. The copy in Google Drive is kept.'
-      : 'The share link will stop working and the video cannot be recovered.',
+    message: 'The share link will stop working and the video cannot be recovered.',
     onConfirm: async () => {
       await api.deleteRecording(item.token)
       recordings.value = recordings.value.filter((r) => r.token !== item.token)
     },
   })
-}
-
-async function importFromDrive() {
-  importing.value = true
-  try {
-    const { imported } = await api.importFromDrive()
-    toast.success(imported ? `Added ${imported} video${imported === 1 ? '' : 's'} from Google Drive` : 'Nothing new in the Drive folder')
-    if (imported) await load()
-  } catch (e) {
-    toast.error(errorMessage(e))
-  } finally {
-    importing.value = false
-  }
 }
 
 load()

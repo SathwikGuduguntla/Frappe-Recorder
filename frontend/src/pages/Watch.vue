@@ -86,23 +86,6 @@
             <Switch :model-value="!!recording.is_public" aria-label="Anyone with the link can view" @update:model-value="setPublic" />
           </div>
 
-          <div v-if="recording.google_drive_status && recording.google_drive_status !== 'Not Synced'" class="mt-4 border-t border-outline-gray-1 pt-4">
-            <div class="flex items-center justify-between gap-2">
-              <DriveBadge :status="recording.google_drive_status" />
-              <a
-                v-if="recording.drive_link"
-                :href="recording.drive_link"
-                target="_blank"
-                rel="noopener"
-                class="text-sm font-medium text-ink-gray-7 underline underline-offset-2 hover:text-ink-gray-9"
-              >
-                Open in Google Drive
-              </a>
-              <Button v-else-if="recording.google_drive_status === 'Failed'" size="sm" label="Try again" @click="retryDrive" />
-            </div>
-            <p v-if="recording.drive_error" class="mt-2 text-sm text-ink-red-7">{{ recording.drive_error }}</p>
-          </div>
-
           <div class="mt-4 flex gap-2 border-t border-outline-gray-1 pt-4">
             <Button class="flex-1" icon-left="lucide-download" label="Download" :href="recording.stream_url + '&download=1'" />
             <Button class="flex-1" theme="red" icon-left="lucide-trash-2" label="Delete" @click="confirmDelete" />
@@ -116,12 +99,11 @@
 </template>
 
 <script setup>
-import { onBeforeUnmount, ref } from 'vue'
+import { ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { Button, LoadingIndicator, Switch, dialog, toast } from 'frappe-ui'
 import { api, copyText, errorMessage, formatDate, formatDuration, formatSize } from '@/api'
 import AiPanel from '@/components/AiPanel.vue'
-import DriveBadge from '@/components/DriveBadge.vue'
 import VideoPlayer from '@/components/VideoPlayer.vue'
 
 const route = useRoute()
@@ -138,8 +120,6 @@ const player = ref(null)
 const currentTime = ref(0)
 
 let viewCounted = false
-let pollTimer = null
-let pollsLeft = 60
 
 async function load() {
   try {
@@ -151,29 +131,11 @@ async function load() {
       copied.value = await copyText(recording.value.share_url)
       router.replace({ name: 'Watch', params: { token } })
     }
-    schedulePoll()
   } catch (e) {
     loadError.value = errorMessage(e)
   } finally {
     loading.value = false
   }
-}
-
-// While the Drive upload runs in the background, keep the status fresh.
-function schedulePoll() {
-  clearTimeout(pollTimer)
-  const waiting = recording.value?.is_owner && recording.value.google_drive_status === 'Pending'
-  if (!waiting || pollsLeft <= 0) return
-  pollTimer = setTimeout(async () => {
-    pollsLeft -= 1
-    try {
-      const fresh = await api.getRecording(token)
-      Object.assign(recording.value, fresh)
-    } catch (e) {
-      /* keep showing what we have */
-    }
-    schedulePoll()
-  }, 5000)
 }
 
 async function countView() {
@@ -217,22 +179,10 @@ async function setPublic(value) {
   }
 }
 
-async function retryDrive() {
-  try {
-    Object.assign(recording.value, await api.retryDriveUpload(token))
-    pollsLeft = 60
-    schedulePoll()
-  } catch (e) {
-    toast.error(errorMessage(e))
-  }
-}
-
 function confirmDelete() {
   dialog.danger({
     title: 'Delete this recording?',
-    message: recording.value.drive_link
-      ? 'The share link will stop working. The copy in Google Drive is kept.'
-      : 'The share link will stop working and the video cannot be recovered.',
+    message: 'The share link will stop working and the video cannot be recovered.',
     onConfirm: async () => {
       await api.deleteRecording(token)
       router.push({ name: 'Library' })
@@ -240,6 +190,5 @@ function confirmDelete() {
   })
 }
 
-onBeforeUnmount(() => clearTimeout(pollTimer))
 load()
 </script>

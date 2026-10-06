@@ -8,21 +8,14 @@ transformers.js for speech, a small Qwen/Llama model through WebLLM for writing)
 works on any server or hosting plan and costs nothing per use. The browser sends back
 only the finished text, which this module checks and stores.
 
-Optionally an admin can point the app at an Ollama server. Summaries and SOPs can then be
-made there, for owners whose device can't run the writing model, and viewers can ask
-questions about a video.
-
-The prompts live here, once, and are handed to the browser by `get_ai_config`, so both
-paths write the same way.
+The prompts live here, once, and are handed to the browser by `get_ai_config`.
 """
 
 import json
 import re
 
 import frappe
-import requests
 from frappe import _
-from frappe.rate_limiter import rate_limit
 from frappe.utils import cint, flt
 
 from frappe_recorder.api import _get_owned_doc, _get_viewable_doc, _is_owner
@@ -37,13 +30,6 @@ MAX_SUMMARY = 50000
 MAX_SOP = 100000
 MAX_HIGHLIGHTS = 30
 MAX_QUESTIONS = 5
-MAX_QUESTION_LENGTH = 500
-
-# Roughly how much transcript one request may carry. The browser models read about
-# 4,000 tokens at a time, so the browser splits long transcripts itself; this is the
-# Ollama equivalent.
-OLLAMA_CHUNK_CHARS = 24000
-OLLAMA_TIMEOUT = 600
 
 SYSTEM_PROMPT = (
 	"You write clear notes about screen recordings from their transcripts. The transcript was "
@@ -133,11 +119,6 @@ def is_enabled() -> bool:
 	return bool(cint(_settings().enabled))
 
 
-def server_ai_available() -> bool:
-	settings = _settings()
-	return bool(is_enabled() and settings.ollama_url and settings.ollama_model)
-
-
 @frappe.whitelist(allow_guest=True)
 def get_ai_config():
 	"""What the browser needs to run the models, and the prompts to give them."""
@@ -146,7 +127,6 @@ def get_ai_config():
 		"enabled": is_enabled(),
 		"whisper_model": settings.whisper_model or "onnx-community/whisper-base",
 		"llm_model": settings.llm_model or "Qwen2.5-1.5B-Instruct-q4f16_1-MLC",
-		"server_ai": server_ai_available(),
 		"system_prompt": SYSTEM_PROMPT,
 		"prompts": PROMPTS,
 		"insights_schema": INSIGHTS_SCHEMA,
@@ -161,8 +141,6 @@ def get_ai_settings():
 		"enabled": cint(settings.enabled),
 		"whisper_model": settings.whisper_model,
 		"llm_model": settings.llm_model,
-		"ollama_url": settings.ollama_url,
-		"ollama_model": settings.ollama_model,
 		"whisper_models": settings.meta.get_field("whisper_model").options.split("\n"),
 		"llm_models": settings.meta.get_field("llm_model").options.split("\n"),
 	}
@@ -173,47 +151,18 @@ def save_ai_settings(
 	enabled: int = 1,
 	whisper_model: str | None = None,
 	llm_model: str | None = None,
-	ollama_url: str | None = None,
-	ollama_model: str | None = None,
 ):
 	frappe.only_for("System Manager")
 	settings = frappe.get_single(SETTINGS)
-	ollama_url = (ollama_url or "").strip().rstrip("/")
-	if ollama_url and not re.match(r"^https?://[^\s/]+", ollama_url):
-		frappe.throw(_("The Ollama URL should look like http://localhost:11434."))
 	settings.update(
 		{
 			"enabled": cint(enabled),
 			"whisper_model": whisper_model or settings.whisper_model,
 			"llm_model": llm_model or settings.llm_model,
-			"ollama_url": ollama_url,
-			"ollama_model": (ollama_model or "").strip(),
 		}
 	)
 	settings.save()
 	return get_ai_settings()
-
-
-@frappe.whitelist(methods=["POST"])
-def test_ollama():
-	"""Checks the Ollama server answers and has the chosen model."""
-	frappe.only_for("System Manager")
-	settings = _settings()
-	if not settings.ollama_url:
-		frappe.throw(_("Add the Ollama URL first."))
-	try:
-		response = requests.get(f"{settings.ollama_url}/api/tags", timeout=15)
-		response.raise_for_status()
-		models = [m.get("name") for m in response.json().get("models", [])]
-	except (requests.RequestException, ValueError):
-		frappe.throw(
-			_("Could not reach Ollama at {0}. Is it running, and reachable from this server?").format(
-				settings.ollama_url
-			)
-		)
-	wanted = settings.ollama_model or ""
-	found = any(name == wanted or name.split(":")[0] == wanted for name in models)
-	return {"models": models, "found": found}
 
 
 # ---------------------------------------------------------------- reading
@@ -442,151 +391,3 @@ def format_time(seconds) -> str:
 
 def transcript_lines(segments: list) -> list[str]:
 	return [f"[{format_time(s['start'])}] {s['text']}" for s in segments]
-
-
-# ---------------------------------------------------------------- optional Ollama server
-
-
-@frappe.whitelist(methods=["POST"])
-def generate_on_server(token: str, kind: str):
-	"""For owners whose browser can't run the writing model: let the Ollama server do it."""
-	if not server_ai_available():
-		frappe.throw(_("No Ollama server is set up on this site."))
-	if kind not in ("insights", "sop"):
-		frappe.throw(_("Unknown step: {0}").format(kind))
-	doc = _get_owned_doc(token)
-	if doc.transcript_status != "Ready":
-		frappe.throw(_("Make the transcript first."))
-
-	doc.db_set({_status_field(kind): "Processing", "ai_error": None}, update_modified=False)
-	frappe.enqueue(
-		"frappe_recorder.ai.run_on_server",
-		queue="long",
-		timeout=3600,
-		enqueue_after_commit=True,
-		job_id=f"frappe_recorder:ai:{kind}:{doc.name}",
-		deduplicate=True,
-		recording=doc.name,
-		kind=kind,
-	)
-	return get_ai(token)
-
-
-def run_on_server(recording: str, kind: str):
-	"""Background job (long queue)."""
-	doc = frappe.get_doc(DOCTYPE, recording)
-	model = f"ollama:{_settings().ollama_model}"
-	frappe.db.savepoint("recorder_ai")
-	try:
-		segments = _load(doc.transcript, [])
-		if kind == "insights":
-			_store_insights(doc, _server_insights(segments), model)
-		else:
-			text = "\n".join(transcript_lines(segments))[: OLLAMA_CHUNK_CHARS * 4]
-			_store_sop(doc, _ollama(PROMPTS["sop"].format(transcript=text)), model)
-	except Exception as e:
-		frappe.db.rollback(save_point="recorder_ai")
-		doc.db_set({_status_field(kind): "Failed", "ai_error": str(e)[:500]}, update_modified=False)
-		frappe.log_error(title=f"Recorder: AI {kind} failed")
-	frappe.db.commit()
-
-
-def _server_insights(segments: list) -> dict:
-	parts = split_transcript(segments, OLLAMA_CHUNK_CHARS)
-	if len(parts) <= 1:
-		reply = _ollama(
-			PROMPTS["insights"].format(transcript="\n".join(transcript_lines(segments))), json_mode=True
-		)
-	else:
-		notes = []
-		for part in parts:
-			notes.append(
-				_ollama(
-					PROMPTS["part"].format(
-						start=format_time(part[0]["start"]),
-						end=format_time(part[-1]["end"]),
-						transcript="\n".join(transcript_lines(part)),
-					)
-				)
-			)
-		reply = _ollama(PROMPTS["insights_from_parts"].format(transcript="\n\n".join(notes)), json_mode=True)
-	data = _load(reply, None)
-	if not isinstance(data, dict):
-		frappe.throw(_("The model did not return the expected format. Try again."))
-	return data
-
-
-def split_transcript(segments: list, max_chars: int) -> list[list]:
-	"""Consecutive groups of segments whose text stays under `max_chars`."""
-	parts, current, size = [], [], 0
-	for segment in segments:
-		length = len(segment["text"]) + 10
-		if current and size + length > max_chars:
-			parts.append(current)
-			current, size = [], 0
-		current.append(segment)
-		size += length
-	if current:
-		parts.append(current)
-	return parts
-
-
-def _ollama(prompt: str, json_mode: bool = False, timeout: int = OLLAMA_TIMEOUT) -> str:
-	settings = _settings()
-	body = {
-		"model": settings.ollama_model,
-		"messages": [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": prompt}],
-		"stream": False,
-		"options": {"temperature": 0.2, "num_ctx": 16384},
-	}
-	if json_mode:
-		body["format"] = "json"
-	try:
-		response = requests.post(f"{settings.ollama_url}/api/chat", json=body, timeout=timeout)
-	except requests.RequestException as e:
-		frappe.throw(_("Could not reach the Ollama server: {0}").format(e))
-	if not response.ok:
-		frappe.throw(_("The Ollama server returned an error: {0}").format(response.text[:300]))
-	return (response.json().get("message") or {}).get("content", "").strip()
-
-
-@frappe.whitelist(allow_guest=True, methods=["POST"])
-@rate_limit(limit=20, seconds=60 * 60)
-def ask(token: str, question: str):
-	"""Viewers' questions, answered by the Ollama server. (Owners can also ask in their
-	own browser, which needs no server.)"""
-	if not server_ai_available():
-		frappe.throw(_("Questions need an Ollama server, which this site has not set up."))
-	doc = _get_viewable_doc(token)
-	question = _clean_text(question, MAX_QUESTION_LENGTH)
-	if not question:
-		frappe.throw(_("Type a question first."))
-	segments = _load(doc.transcript, [])
-	if not segments:
-		frappe.throw(_("This video has no transcript yet."))
-
-	text = "\n".join(relevant_lines(segments, question, OLLAMA_CHUNK_CHARS))
-	answer = _ollama(PROMPTS["ask"].format(transcript=text, question=question), timeout=110)
-	return {"answer": _clean_markdown(answer, 5000)}
-
-
-def relevant_lines(segments: list, question: str, max_chars: int) -> list[str]:
-	"""The whole transcript when it fits; otherwise the segments sharing the most words with
-	the question, plus their neighbours, kept in video order."""
-	lines = transcript_lines(segments)
-	if sum(len(line) + 1 for line in lines) <= max_chars:
-		return lines
-
-	words = {w for w in re.findall(r"\w{3,}", question.lower())}
-	scores = [len(words & set(re.findall(r"\w{3,}", s["text"].lower()))) for s in segments]
-	ranked = sorted(range(len(segments)), key=lambda i: scores[i], reverse=True)
-
-	chosen, size = set(), 0
-	for index in ranked:
-		for i in (index - 1, index, index + 1):
-			if 0 <= i < len(lines) and i not in chosen and size + len(lines[i]) + 1 <= max_chars:
-				chosen.add(i)
-				size += len(lines[i]) + 1
-		if size >= max_chars * 0.9:
-			break
-	return [lines[i] for i in sorted(chosen)]

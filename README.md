@@ -5,27 +5,10 @@ Record your screen, your camera, or both in the browser and get a share link the
 - **Record** at `/recorder`: Screen + Camera (camera shown as a bubble), Screen only, or Camera only, with microphone and system audio, a 3-second countdown, pause/resume, mute and discard.
 - **Share** at `/r/<token>`: anyone with the link can watch, no sign-in. The owner can rename, switch link sharing off, download and delete. Views are counted.
 - **Library** at `/recorder/library`: all of your recordings with thumbnails and search.
-- **Google Drive** at `/recorder/settings`: paste the link of a Drive folder shared as *Anyone with the link → Editor*; every recording is then copied into that folder, and videos already in the folder can be imported into the library.
+- **File Manager**: every finished recording is also a private File in Frappe's File Manager, under **Home / Recordings**, attached to its Screen Recording.
 - **Transcript and AI notes** on every video: a timestamped transcript, a summary, highlights and a step-by-step SOP, with clickable times that jump the video. Made by free open-source models in the recording owner's browser: no API key, no server load, works on any hosting plan.
 
 The video is uploaded in small pieces while you record, so the link is ready as soon as you press stop, however long the recording is.
-
-#### Google Drive setup
-
-No Google Cloud project, OAuth client or "Connect" step is needed.
-
-1. In Google Drive, open the folder's **Share** dialog and set General access to **Anyone with the link**, role **Editor**. Copy the link (for example `https://drive.google.com/drive/folders/1ugelp0xHEjC-VTsvphwSai4aUfYEQ0HT?usp=sharing`).
-2. Open `/recorder/settings` as a System Manager and paste it into **Drive folder link**.
-3. One time only, set up the **Uploader**. Google only accepts uploads made by a Google account, even into a public folder, so a small Apps Script uploads as your account:
-   - open a new project at [script.google.com/create](https://script.google.com/create);
-   - paste the script shown on the settings page (it already contains this site's secret) and save;
-   - **Deploy → New deployment → Web app**, with *Execute as: Me* and *Who has access: Anyone*. Allow access when Google asks; if it says the app isn't verified, choose **Advanced → Go to (project name)**, since it is your own script;
-   - paste the **Web app URL** into the settings page.
-
-   To check the deployment, open the Web app URL in a private browser window: it should show `"The uploader is running."`. A Google sign-in page means *Who has access* is not **Anyone** (Google Workspace admins can turn that option off; deploy from a personal Gmail account then). After editing the script, deploy it again with **Deploy → Manage deployments → Edit → Version: New version**, since a deployment keeps the code it was made with.
-4. Save. The recorder checks the uploader and the folder straight away and turns Drive storage on.
-
-Uploads run in the background queue (`long`), so a worker must be running. Failed uploads are retried hourly. Videos are uploaded as the Google account that deployed the script, and use its storage quota.
 
 #### Transcripts and AI notes
 
@@ -35,13 +18,12 @@ On by default, under **Transcripts and AI notes** in `/recorder/settings`. Nothi
 - The summary, highlights and SOP are written in the same browser by a small open-source model (**Qwen2.5** or **Llama 3.2** through [WebLLM](https://github.com/mlc-ai/web-llm)). This needs WebGPU: Chrome or Edge on a computer with a graphics card. If the model is already downloaded, the summary starts by itself; otherwise the owner clicks **Write summary**.
 - Models are downloaded once from Hugging Face and kept in the browser's cache. Whisper base is about 145 MB; Qwen2.5 1.5B is about 1 GB.
 - Viewers just read the results, on any device.
-- **Optional Ollama server:** set an Ollama URL and model to also make summaries and SOPs for owners whose device has no WebGPU, and to let viewers ask questions about a video. Ollama needs a machine with about 8 GB RAM for a 7B model, so it can't run on shared hosting; it can run on another machine.
 
 #### Notes
 
 - Recording needs a signed-in user. Watching a shared link does not.
-- Video files are stored in `private/files/recorder` and served through `frappe_recorder.api.stream`, so turning link sharing off really does cut access.
-- Deleting a recording removes it from this site. The copy in Google Drive is kept.
+- Video files are stored in `private/files` and served through `frappe_recorder.api.stream`, so turning link sharing off really does cut access.
+- Deleting a recording removes its video and its File Manager entry. A File that belongs to a recording cannot be deleted on its own from the File Manager; delete the recording instead.
 
 ### Installation
 

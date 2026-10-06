@@ -2,13 +2,14 @@
 # See license.txt
 
 import io
+import os
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
 from frappe_recorder import api
-from frappe_recorder.drive import parse_folder_id
 
 
 def upload(token: str, index: int, content: bytes):
@@ -63,12 +64,36 @@ class TestScreenRecording(FrappeTestCase):
 		frappe.set_user("Guest")
 		self.assertRaises(frappe.AuthenticationError, api.create_recording, title="Nope")
 
-	def test_drive_folder_links(self):
-		folder = "1AbCdEfGhIjKlMnOpQrStUvWxYz012345"
-		self.assertEqual(parse_folder_id(f"https://drive.google.com/drive/folders/{folder}"), folder)
-		self.assertEqual(
-			parse_folder_id(f"https://drive.google.com/drive/u/1/folders/{folder}?usp=sharing"), folder
-		)
-		self.assertEqual(parse_folder_id(f"https://drive.google.com/open?id={folder}"), folder)
-		self.assertEqual(parse_folder_id(folder), folder)
-		self.assertIsNone(parse_folder_id("https://example.com/not-drive"))
+	def test_finished_video_is_in_the_file_manager(self):
+		token = api.create_recording(title="Filed")["token"]
+		upload(token, 0, b"video")
+		api.finalize_recording(token, duration_seconds=3)
+
+		doc = api._get_doc(token)
+		file = frappe.get_doc("File", doc.file)
+		self.assertEqual(file.folder, "Home/Recordings")
+		self.assertTrue(file.is_private)
+		self.assertEqual(file.file_name, "Filed.webm")
+		self.assertEqual((file.attached_to_doctype, file.attached_to_name), ("Screen Recording", doc.name))
+		self.assertEqual(file.get_full_path(), doc.local_video_path())
+
+		api.delete_recording(token)
+		self.assertFalse(frappe.db.exists("File", file.name))
+		self.assertFalse(os.path.exists(doc.local_video_path()))
+
+	def test_recording_finishes_even_if_filing_fails(self):
+		token = api.create_recording(title="Unfiled")["token"]
+		self.addCleanup(api.delete_recording, token)
+		upload(token, 0, b"video")
+
+		with patch(
+			"frappe_recorder.frappe_recorder.doctype.screen_recording.screen_recording.recordings_folder",
+			side_effect=Exception("no folder"),
+		):
+			self.assertEqual(api.finalize_recording(token, duration_seconds=3)["status"], "Ready")
+		self.assertFalse(api._get_doc(token).file)
+
+		from frappe_recorder.tasks import close_abandoned_recordings
+
+		close_abandoned_recordings()
+		self.assertTrue(api._get_doc(token).file)
