@@ -20,6 +20,7 @@ def close_abandoned_recordings():
 		if doc.has_local_video() and os.path.getsize(doc.local_video_path()) > 0:
 			doc.status = "Ready"
 			doc.file_size = os.path.getsize(doc.local_video_path())
+			doc.add_to_file_manager()
 			doc.save(ignore_permissions=True)
 		else:
 			frappe.delete_doc("Screen Recording", name, ignore_permissions=True)

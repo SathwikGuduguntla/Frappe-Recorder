@@ -10,25 +10,19 @@
   "token",
   "status",
   "is_public",
-  "source",
   "column_break_main",
   "duration_seconds",
   "file_size",
   "view_count",
   "folder",
   "section_file",
+  "file",
   "video_file",
   "mime_type",
   "chunks_received",
   "bytes_received",
   "column_break_file",
   "thumbnail",
-  "section_drive",
-  "google_drive_status",
-  "drive_file_id",
-  "column_break_drive",
-  "drive_link",
-  "drive_error",
   "section_ai",
   "transcript_status",
   "transcript_language",
@@ -77,14 +71,6 @@
    "default": "1"
   },
   {
-   "fieldname": "source",
-   "fieldtype": "Select",
-   "label": "Source",
-   "options": "Recorder\nGoogle Drive",
-   "default": "Recorder",
-   "read_only": 1
-  },
-  {
    "fieldname": "column_break_main",
    "fieldtype": "Column Break"
   },
@@ -119,11 +105,20 @@
    "label": "File"
   },
   {
+   "fieldname": "file",
+   "fieldtype": "Link",
+   "label": "File",
+   "options": "File",
+   "read_only": 1,
+   "no_copy": 1,
+   "description": "The video in the File Manager (Home/Recordings), added when the recording is finished."
+  },
+  {
    "fieldname": "video_file",
    "fieldtype": "Data",
    "label": "Video File",
    "read_only": 1,
-   "description": "File name inside the site's private/files/recorder directory. Empty when the video only lives in Google Drive."
+   "description": "File name inside the site's private/files directory, written to while recording."
   },
   {
    "fieldname": "mime_type",
@@ -156,42 +151,6 @@
    "fieldname": "thumbnail",
    "fieldtype": "Attach Image",
    "label": "Thumbnail"
-  },
-  {
-   "fieldname": "section_drive",
-   "fieldtype": "Section Break",
-   "label": "Google Drive"
-  },
-  {
-   "fieldname": "google_drive_status",
-   "fieldtype": "Select",
-   "label": "Google Drive Status",
-   "options": "Not Synced\nPending\nSynced\nFailed",
-   "default": "Not Synced",
-   "read_only": 1
-  },
-  {
-   "fieldname": "drive_file_id",
-   "fieldtype": "Data",
-   "label": "Drive File ID",
-   "read_only": 1
-  },
-  {
-   "fieldname": "column_break_drive",
-   "fieldtype": "Column Break"
-  },
-  {
-   "fieldname": "drive_link",
-   "fieldtype": "Data",
-   "label": "Drive Link",
-   "options": "URL",
-   "read_only": 1
-  },
-  {
-   "fieldname": "drive_error",
-   "fieldtype": "Small Text",
-   "label": "Drive Error",
-   "read_only": 1
   },
   {
    "fieldname": "section_ai",
@@ -299,7 +258,7 @@
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-10-03 10:00:00.000000",
+ "modified": "2026-10-06 10:00:00.000000",
  "modified_by": "Administrator",
  "module": "Frappe Recorder",
  "name": "Screen Recording",

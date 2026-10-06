@@ -127,10 +127,6 @@
           <span class="size-3 rounded-full bg-white" aria-hidden="true" />
           Start recording
         </button>
-        <p v-if="session.drive_active" class="mt-3 flex items-center justify-center gap-1.5 text-sm text-ink-gray-5">
-          <span class="lucide-cloud-upload size-3.5" aria-hidden="true" />
-          Recordings are also saved to Google Drive.
-        </p>
       </div>
     </template>
 
@@ -213,7 +209,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { onBeforeRouteLeave, useRouter } from 'vue-router'
 import { Button, LoadingIndicator, Switch, dialog, toast } from 'frappe-ui'
-import { formatDuration, formatSize, session } from '@/api'
+import { formatDuration, formatSize } from '@/api'
 import { MODES, isRecordingSupported, isScreenCaptureSupported, useRecorder } from '@/composables/useRecorder'
 
 const router = useRouter()

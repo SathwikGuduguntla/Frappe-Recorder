@@ -29,7 +29,6 @@ website_route_rules = [
 ]
 
 scheduler_events = {
-	"hourly": ["frappe_recorder.drive.retry_pending_uploads"],
 	"daily": ["frappe_recorder.tasks.close_abandoned_recordings"],
 }
 

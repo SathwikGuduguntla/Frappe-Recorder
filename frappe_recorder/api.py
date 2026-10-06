@@ -6,7 +6,7 @@
 Recording flow:
   1. create_recording   -> reserves a share token, so the link exists before upload ends
   2. upload_chunk       -> called repeatedly while recording; appends to the video file
-  3. finalize_recording -> marks the recording Ready and queues the Google Drive upload
+  3. finalize_recording -> marks the recording Ready and adds the video to the File Manager
 
 Anyone holding the share link (/r/<token>) can watch through get_recording + stream,
 as long as link sharing is on for that recording.
@@ -20,12 +20,10 @@ import frappe
 from frappe import _
 from frappe.utils import cint, get_url
 from werkzeug.utils import send_file
-from werkzeug.wrappers import Response
 
 from frappe_recorder.frappe_recorder.doctype.screen_recording.screen_recording import (
-	remove_if_exists,
 	thumbnail_dir,
-	video_dir,
+	video_file_name,
 )
 
 DOCTYPE = "Screen Recording"
@@ -104,10 +102,6 @@ def _serialize(doc, is_owner: bool) -> dict:
 			{
 				"is_public": cint(doc.is_public),
 				"file_size": doc.file_size or 0,
-				"source": doc.source,
-				"google_drive_status": doc.google_drive_status,
-				"drive_link": doc.drive_link,
-				"drive_error": doc.drive_error,
 			}
 		)
 	return data
@@ -119,16 +113,13 @@ def _serialize(doc, is_owner: bool) -> dict:
 @frappe.whitelist(allow_guest=True)
 def get_session():
 	"""Who is using the app, and what they are allowed to do."""
-	from frappe_recorder import drive
-
 	user = frappe.session.user
 	if user == "Guest":
-		return {"user": None, "is_manager": False, "drive_active": False}
+		return {"user": None, "is_manager": False}
 	return {
 		"user": user,
 		"full_name": frappe.utils.get_fullname(user),
 		"is_manager": _is_manager(),
-		"drive_active": drive.is_active(),
 	}
 
 
@@ -150,12 +141,10 @@ def create_recording(title: str | None = None, mime_type: str = "video/webm"):
 			"status": "Recording",
 			"is_public": 1,
 			"mime_type": base_mime,
-			"source": "Recorder",
-			"google_drive_status": "Not Synced",
 		}
 	)
 	doc.insert(ignore_permissions=True)
-	doc.db_set("video_file", f"{doc.token}.{MIME_EXTENSIONS[base_mime]}", update_modified=False)
+	doc.db_set("video_file", video_file_name(doc.token, MIME_EXTENSIONS[base_mime]), update_modified=False)
 	return {"token": doc.token, "share_url": share_url(doc.token)}
 
 
@@ -208,8 +197,6 @@ def upload_chunk(token: str, index: int):
 
 @frappe.whitelist(methods=["POST"])
 def finalize_recording(token: str, duration_seconds: int = 0, thumbnail: str | None = None):
-	from frappe_recorder import drive
-
 	doc = _get_owned_doc(token)
 	if doc.status == "Recording":
 		if not doc.has_local_video():
@@ -220,12 +207,8 @@ def finalize_recording(token: str, duration_seconds: int = 0, thumbnail: str | N
 		doc.status = "Ready"
 		if thumbnail:
 			doc.thumbnail = _save_thumbnail(doc.token, thumbnail)
-		if drive.is_active():
-			doc.google_drive_status = "Pending"
+		doc.add_to_file_manager()
 		doc.save(ignore_permissions=True)
-
-		if doc.google_drive_status == "Pending":
-			drive.enqueue_upload(doc.name)
 
 	return _serialize(doc, is_owner=True)
 
@@ -258,8 +241,7 @@ def update_recording(token: str, title: str | None = None, is_public: int | None
 
 @frappe.whitelist(methods=["POST"])
 def delete_recording(token: str):
-	"""Removes the recording and its file on this site. A copy already uploaded to
-	Google Drive is left in Drive."""
+	"""Removes the recording and its video, including the File Manager entry."""
 	doc = _get_owned_doc(token)
 	frappe.delete_doc(DOCTYPE, doc.name, ignore_permissions=True)
 	return {"deleted": token}
@@ -306,10 +288,7 @@ def register_view(token: str):
 
 @frappe.whitelist(allow_guest=True, methods=["GET"])
 def stream(token: str, download: int = 0):
-	"""Serves the video with HTTP Range support so the player can seek.
-	Falls back to streaming from Google Drive when there is no local copy."""
-	from frappe_recorder import drive
-
+	"""Serves the video with HTTP Range support so the player can seek."""
 	doc = _get_viewable_doc(token)
 	extension = MIME_EXTENSIONS.get(doc.mime_type) or "webm"
 	download_name = f"{re.sub(r'[^A-Za-z0-9 _.-]+', '', doc.title).strip() or doc.token}.{extension}"
@@ -326,22 +305,5 @@ def stream(token: str, download: int = 0):
 		)
 		response.headers["Accept-Ranges"] = "bytes"
 		return response
-
-	if doc.drive_file_id:
-		upstream = drive.open_file_stream(doc.drive_file_id, frappe.get_request_header("Range"))
-		headers = {
-			key: upstream.headers[key]
-			for key in ("Content-Type", "Content-Length", "Content-Range")
-			if key in upstream.headers
-		}
-		headers["Accept-Ranges"] = "bytes"
-		if cint(download):
-			headers["Content-Disposition"] = f'attachment; filename="{download_name}"'
-		return Response(
-			upstream.iter_content(chunk_size=256 * 1024),
-			status=upstream.status_code,
-			headers=headers,
-			direct_passthrough=True,
-		)
 
 	frappe.throw(_("The video file is missing."), frappe.DoesNotExistError)

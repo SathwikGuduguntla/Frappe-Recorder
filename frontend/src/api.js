@@ -2,10 +2,9 @@ import { reactive } from 'vue'
 import { call } from 'frappe-ui'
 
 const API = 'frappe_recorder.api.'
-const DRIVE = 'frappe_recorder.drive.'
 const AI = 'frappe_recorder.ai.'
 
-export const session = reactive({ loaded: false, user: null, full_name: '', is_manager: false, drive_active: false })
+export const session = reactive({ loaded: false, user: null, full_name: '', is_manager: false })
 
 let sessionPromise = null
 export function loadSession(force = false) {
@@ -27,16 +26,6 @@ export const api = {
   getRecording: (token) => call(API + 'get_recording', { token }),
   registerView: (token) => call(API + 'register_view', { token }),
   listRecordings: (search) => frappeGet(API + 'list_recordings', { search: search || '' }),
-
-  getDriveSettings: () => frappeGet(DRIVE + 'get_settings'),
-  saveDriveSettings: (values) => call(DRIVE + 'save_settings', values),
-  saveGoogleClient: (clientId, clientSecret) =>
-    call(DRIVE + 'save_google_client', { client_id: clientId, client_secret: clientSecret }),
-  connectDrive: () => call(DRIVE + 'connect'),
-  saveUploader: (uploaderUrl) => call(DRIVE + 'save_uploader', { uploader_url: uploaderUrl }),
-  disconnectDrive: () => call(DRIVE + 'disconnect'),
-  importFromDrive: () => call(DRIVE + 'import_from_drive'),
-  retryDriveUpload: (token) => call(DRIVE + 'retry_upload', { token }),
 
   getAiConfig: () => frappeGet(AI + 'get_ai_config'),
   getAi: (token) => frappeGet(AI + 'get_ai', { token }),

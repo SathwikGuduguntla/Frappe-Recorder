@@ -32,8 +32,7 @@ pre-commit run --all-files
 ```
 
 - The Vite dev server needs `"ignore_csrf": 1` in the site config.
-- Google Drive uploads run on the `long` queue, so a worker must be running (`bench start`) to exercise them.
-- There are no frontend tests. Backend tests are in `test_screen_recording.py`, `test_google_drive_settings.py` and `test_recorder_ai_settings.py`.
+- There are no frontend tests. Backend tests are in `test_screen_recording.py` and `test_recorder_ai_settings.py`.
 - CI runs the tests on pushes to `develop` and on pull requests; the linter workflow adds Frappe semgrep rules and pip-audit.
 
 ## Architecture
@@ -51,7 +50,7 @@ All three DocTypes grant permissions only to System Manager. Regular users never
 - `_get_owned_doc(token)` — logged in, and `doc.owner` or a System Manager.
 - `_get_viewable_doc(token)` — anyone if `is_public`, otherwise the owner or a System Manager.
 
-A new endpoint must go through one of these helpers. Recordings are addressed by their 12-character `token` (the share-link secret), never by the document name (`REC-#####`). `_serialize` returns a reduced field set to non-owners — keep owner-only fields (Drive status, file size, `is_public`) inside its `is_owner` block.
+A new endpoint must go through one of these helpers. Recordings are addressed by their 12-character `token` (the share-link secret), never by the document name (`REC-#####`). `_serialize` returns a reduced field set to non-owners — keep owner-only fields (file size, `is_public`) inside its `is_owner` block.
 
 ### Recording pipeline (chunked upload)
 
@@ -59,38 +58,24 @@ The share link has to exist before the upload finishes, so recording is three ca
 
 1. `create_recording` inserts the doc with status `Recording` and reserves the token and `video_file` name.
 2. `upload_chunk` appends bytes to the file. Chunks are strictly ordered by `chunks_received`: a repeated index is acknowledged and ignored (client retry), a skipped index is an error. The row is locked for the write, and the file is truncated to `bytes_received` first, so a retry never duplicates bytes.
-3. `finalize_recording` sets status `Ready`, saves the thumbnail, and queues the Drive upload if Drive is active.
+3. `finalize_recording` sets status `Ready`, saves the thumbnail, and adds the video to the File Manager (`add_to_file_manager`).
 
 The client side is `frontend/src/composables/useRecorder.js`, a state machine (`idle → countdown → recording ⇄ paused → finishing`, plus `failed`). `MediaRecorder` emits a blob every 2 s; `pumpUploads` sends them one request at a time, in order, batching whatever queued up meanwhile, retrying with backoff but giving up on any 4xx. All chunks are also kept in memory so a failed upload can still be downloaded locally. Discarding, or navigating away inside the app, deletes the server-side recording; closing or reloading the tab only shows the `beforeunload` warning and leaves it in `Recording`.
 
 `composables/compositor.js` handles Screen + Camera mode by drawing both onto a canvas and recording the canvas track. Its frame loop is driven by a Web Worker timer on purpose — `requestAnimationFrame` stalls when the tab is in the background, which is exactly when people are presenting.
 
-`tasks.close_abandoned_recordings` (daily) rescues recordings stuck in `Recording` for 12+ hours: kept as `Ready` if any bytes arrived, deleted otherwise.
+`tasks.close_abandoned_recordings` (daily) rescues recordings stuck in `Recording` for 12+ hours: kept as `Ready` (and filed) if any bytes arrived, deleted otherwise.
 
 ### File storage and streaming
 
 Paths come from helpers in `doctype/screen_recording/screen_recording.py`:
 
-- Videos: `private/files/recorder/<token>.<ext>` — private, served only through `api.stream` (so switching sharing off really revokes access). `stream` supports HTTP Range for seeking.
-- Thumbnails: `public/files/recorder/<token>.jpg`.
+- Videos: `private/files/recording-<token>.<ext>` — private, served only through `api.stream` (so switching sharing off really revokes access). `stream` supports HTTP Range for seeking. They sit directly in `private/files` because Frappe's `File` resolves and deletes files by basename only.
+- Thumbnails: `public/files/recorder/<token>.jpg` (plain files).
 
-These are plain files, not Frappe `File` documents. `on_trash` deletes the local files and deliberately leaves any Google Drive copy.
+While recording, the video is a plain file. On finalize, `add_to_file_manager` registers it as a private `File` document in `Home/Recordings`, attached to the recording and linked from its `file` field. It sets `flags.copy_from_existing_file` (so File does not read the whole video into memory or apply the upload size limit) and computes `content_hash` itself in chunks. `on_trash` deletes that File (with `force`, since the recording still links to it) and the local files. Because of the link, the File cannot be deleted on its own from the File Manager.
 
-If a recording has no local video but has a `drive_file_id`, `stream` proxies the bytes (and the Range header) from Google Drive.
-
-### Google Drive (`drive.py`)
-
-Uses only `requests` against the Drive REST API (plus Frappe's own `google_oauth` helper for tokens) — the app has no Python dependencies beyond Frappe, keep it that way.
-
-- Config is the `Google Drive Settings` single. Access tokens come from one of two connection methods (`connection_method()`), both behind `_access_token()`:
-  - **Google sign-in**: reuses Frappe's Google integration. The OAuth client (ID/secret) lives in core `Google Settings` (the settings page can fill it via `save_google_client`); `connect` builds the consent URL with `create_google_oauth_state`, Google returns through `frappe.integrations.google_oauth.callback`, which calls `drive.authorize_access` to store `refresh_token` (Password) and `connected_email`. Tokens are refreshed via `GoogleOAuth("drive")` and cached in Redis until shortly before expiry.
-  - **Apps Script uploader** (no OAuth client): a web app the admin deploys once (`UPLOADER_SCRIPT`, shown on the settings page with the site's generated `uploader_secret` written in); `save_uploader` stores `uploader_url`, and `_uploader_access_token()` POSTs the secret to it and caches the token for 10 minutes.
-  - Connecting one way clears the other; `disconnect` clears both. The connected account must be able to add files to the folder.
-- Older link-shared folders need a `resourcekey` from their link; it is stored as `folder_resource_key` and sent in `X-Goog-Drive-Resource-Keys`.
-- `upload_recording` is the background job (resumable upload in 16 MB pieces). It records `Failed` + `drive_error` on the doc rather than raising. `retry_pending_uploads` (hourly) re-runs `Pending`/`Failed` ones. When `keep_local_copy` is off, the local file is removed after upload and playback switches to the Drive proxy.
-- `import_from_drive` creates `source = "Google Drive"` recordings for videos already in the folder; these never have a local file.
-
-`Screen Recording.status` and `google_drive_status` are independent: the first tracks the recording lifecycle, the second the Drive copy.
+Google Drive storage was removed; `patches/v1/move_videos_to_file_manager` moved older videos out of `private/files/recorder` and deleted the `Google Drive Settings` DocType. The old `drive_*`/`source` columns may remain in existing databases, unused.
 
 ### Transcripts and AI notes (`ai.py`, `frontend/src/ai/`)
 
