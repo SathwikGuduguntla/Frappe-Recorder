@@ -58,13 +58,13 @@ The share link has to exist before the upload finishes, so recording is three ca
 
 1. `create_recording` inserts the doc with status `Recording` and reserves the token and `video_file` name.
 2. `upload_chunk` appends bytes to the file. Chunks are strictly ordered by `chunks_received`: a repeated index is acknowledged and ignored (client retry), a skipped index is an error. The row is locked for the write, and the file is truncated to `bytes_received` first, so a retry never duplicates bytes.
-3. `finalize_recording` sets status `Ready`, saves the thumbnail, and adds the video to the File Manager (`add_to_file_manager`).
+3. `finalize_recording` sets status `Ready`, saves the thumbnail, and adds the video to the File Manager (`try_add_to_file_manager`). Filing failures are logged, not raised, so the recording still finishes; `file` stays empty and the daily task retries.
 
 The client side is `frontend/src/composables/useRecorder.js`, a state machine (`idle → countdown → recording ⇄ paused → finishing`, plus `failed`). `MediaRecorder` emits a blob every 2 s; `pumpUploads` sends them one request at a time, in order, batching whatever queued up meanwhile, retrying with backoff but giving up on any 4xx. All chunks are also kept in memory so a failed upload can still be downloaded locally. Discarding, or navigating away inside the app, deletes the server-side recording; closing or reloading the tab only shows the `beforeunload` warning and leaves it in `Recording`.
 
 `composables/compositor.js` handles Screen + Camera mode by drawing both onto a canvas and recording the canvas track. Its frame loop is driven by a Web Worker timer on purpose — `requestAnimationFrame` stalls when the tab is in the background, which is exactly when people are presenting.
 
-`tasks.close_abandoned_recordings` (daily) rescues recordings stuck in `Recording` for 12+ hours: kept as `Ready` (and filed) if any bytes arrived, deleted otherwise.
+`tasks.close_abandoned_recordings` (daily) rescues recordings stuck in `Recording` for 12+ hours: kept as `Ready` (and filed) if any bytes arrived, deleted otherwise. It also files `Ready` recordings whose `file` is still empty.
 
 ### File storage and streaming
 

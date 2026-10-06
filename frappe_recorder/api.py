@@ -207,7 +207,7 @@ def finalize_recording(token: str, duration_seconds: int = 0, thumbnail: str | N
 		doc.status = "Ready"
 		if thumbnail:
 			doc.thumbnail = _save_thumbnail(doc.token, thumbnail)
-		doc.add_to_file_manager()
+		doc.try_add_to_file_manager()
 		doc.save(ignore_permissions=True)
 
 	return _serialize(doc, is_owner=True)

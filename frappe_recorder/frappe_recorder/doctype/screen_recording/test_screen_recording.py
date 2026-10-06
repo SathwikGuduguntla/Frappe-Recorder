@@ -4,6 +4,7 @@
 import io
 import os
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import frappe
 from frappe.tests.utils import FrappeTestCase
@@ -79,3 +80,20 @@ class TestScreenRecording(FrappeTestCase):
 		api.delete_recording(token)
 		self.assertFalse(frappe.db.exists("File", file.name))
 		self.assertFalse(os.path.exists(doc.local_video_path()))
+
+	def test_recording_finishes_even_if_filing_fails(self):
+		token = api.create_recording(title="Unfiled")["token"]
+		self.addCleanup(api.delete_recording, token)
+		upload(token, 0, b"video")
+
+		with patch(
+			"frappe_recorder.frappe_recorder.doctype.screen_recording.screen_recording.recordings_folder",
+			side_effect=Exception("no folder"),
+		):
+			self.assertEqual(api.finalize_recording(token, duration_seconds=3)["status"], "Ready")
+		self.assertFalse(api._get_doc(token).file)
+
+		from frappe_recorder.tasks import close_abandoned_recordings
+
+		close_abandoned_recordings()
+		self.assertTrue(api._get_doc(token).file)

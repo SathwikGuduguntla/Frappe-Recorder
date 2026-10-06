@@ -20,7 +20,16 @@ def close_abandoned_recordings():
 		if doc.has_local_video() and os.path.getsize(doc.local_video_path()) > 0:
 			doc.status = "Ready"
 			doc.file_size = os.path.getsize(doc.local_video_path())
-			doc.add_to_file_manager()
+			doc.try_add_to_file_manager()
 			doc.save(ignore_permissions=True)
 		else:
 			frappe.delete_doc("Screen Recording", name, ignore_permissions=True)
+
+	# Finished recordings whose filing failed at finalize (see `try_add_to_file_manager`).
+	for name in frappe.get_all(
+		"Screen Recording", filters={"status": "Ready", "file": ["is", "not set"]}, pluck="name"
+	):
+		doc = frappe.get_doc("Screen Recording", name)
+		if doc.has_local_video():
+			doc.try_add_to_file_manager()
+			doc.save(ignore_permissions=True)

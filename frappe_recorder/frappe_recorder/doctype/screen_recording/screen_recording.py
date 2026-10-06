@@ -67,6 +67,17 @@ class ScreenRecording(Document):
 			file.db_set("owner", self.owner, update_modified=False)
 		self.file = file.name
 
+	def try_add_to_file_manager(self):
+		"""Filing is bookkeeping: the video already plays through `api.stream`, so a failure here
+		must not fail the recording. The error is logged and `file` stays empty, for
+		`tasks.close_abandoned_recordings` to retry."""
+		frappe.db.savepoint("add_to_file_manager")
+		try:
+			self.add_to_file_manager()
+		except Exception:
+			frappe.db.rollback(save_point="add_to_file_manager")
+			self.log_error("Could not add the recording to the File Manager")
+
 
 def new_token() -> str:
 	while True:
@@ -94,9 +105,9 @@ def thumbnail_dir() -> str:
 def recordings_folder() -> str:
 	name = f"Home/{FILE_FOLDER}"
 	if not frappe.db.exists("File", name):
-		frappe.get_doc({"doctype": "File", "file_name": FILE_FOLDER, "is_folder": 1, "folder": "Home"}).insert(
-			ignore_permissions=True, ignore_if_duplicate=True
-		)
+		frappe.get_doc(
+			{"doctype": "File", "file_name": FILE_FOLDER, "is_folder": 1, "folder": "Home"}
+		).insert(ignore_permissions=True, ignore_if_duplicate=True)
 	return name
 
 
